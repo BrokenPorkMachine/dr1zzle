@@ -43,3 +43,4 @@ next useful steps are exception handling, a data-only board description, timer
 support, and a testable command parser. Keep physical-device support as a
   separate, explicitly reviewed project. The current boot image deliberately
 avoids exploit delivery and physical-device payload packaging.
+# dr1zzle
