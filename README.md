@@ -1,4 +1,4 @@
-# dr1zzle
+# dr1zzle OpenSEP
 
 `dr1zzle` is a clean-room, freestanding C boot-monitor foundation. It is built
 around an independently-written libc (`libdrizzle`) and a safe QEMU Arm `virt`
