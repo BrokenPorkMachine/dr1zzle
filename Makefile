@@ -2,7 +2,7 @@
 # Target: Apple A11 (T8015) - iPhone 8/X
 
 ARCH := aarch64
-CROSS_COMPILE ?= aarch64-none-elf-
+CROSS_COMPILE ?= aarch64-elf-
 GNU_CC := $(shell command -v $(CROSS_COMPILE)gcc 2>/dev/null)
 LLVM_OBJCOPY := $(shell command -v llvm-objcopy 2>/dev/null || test ! -x /opt/homebrew/opt/llvm/bin/llvm-objcopy || echo /opt/homebrew/opt/llvm/bin/llvm-objcopy)
 HOST_CC ?= cc
@@ -64,6 +64,7 @@ C_SRCS := \
 	$(SRC_DIR)/drivers/nand_export.c \
 	$(SRC_DIR)/drivers/recfg.c \
 	$(SRC_DIR)/drivers/recfg_soc.c \
+	$(SRC_DIR)/drivers/sep.c \
 	$(SRC_DIR)/drivers/tz.c \
 	$(SRC_DIR)/ui/dashboard.c \
 	$(SRC_DIR)/ui/menu.c \
@@ -181,6 +182,12 @@ ASMFLAGS := -I$(INC_DIR) -I$(SRC_DIR)/arch/arm64
 
 LDFLAGS := -nostdlib -nodefaultlibs -Wl,-T,$(LDSCRIPT) -Wl,-Map,$(BUILD_DIR)/$(TARGET).map
 FW_LDFLAGS := -nostdlib -nodefaultlibs -Wl,-T,$(FW_LDSCRIPT) -Wl,-Map,$(BUILD_DIR)/$(FW_TARGET).map
+
+# Use lld for clang bare-metal targets (avoids ld64 confusion)
+ifeq ($(GNU_CC),)
+LDFLAGS += -fuse-ld=lld
+FW_LDFLAGS += -fuse-ld=lld
+endif
 
 SIZE_CFLAGS := $(CFLAGS) -Os
 

@@ -223,6 +223,69 @@
 /* The selected profile, in the form build and drivers can test            */
 /* ----------------------------------------------------------------------- */
 
+/* These alias the namespaced form the profile defines, and have to exist
+ * before the payload gate below, which reads them. */
+#define DR1ZZLE_SOC_UART_BASE     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _UART_BASE)
+#define DR1ZZLE_SOC_TIMER_BASE    DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _TIMER_BASE)
+#define DR1ZZLE_SOC_AIC_BASE      DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _AIC_BASE)
+#define DR1ZZLE_SOC_PMGR_BASE     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _PMGR_BASE)
+#define DR1ZZLE_SOC_GPIO_BASE     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _GPIO_BASE)
+#define DR1ZZLE_SOC_I2C_BASE      DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _I2C_BASE)
+#define DR1ZZLE_SOC_SPI_BASE      DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _SPI_BASE)
+#define DR1ZZLE_SOC_WATCHDOG_BASE DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _WATCHDOG_BASE)
+#define DR1ZZLE_SOC_NAND_BASE     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _NAND_BASE)
+#define DR1ZZLE_SOC_USB_BASE      DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _USB_BASE)
+#define DR1ZZLE_SOC_DCP_BASE      DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _DCP_BASE)
+
+/* ----------------------------------------------------------------------- */
+/* The payload gate                                                         */
+/* ----------------------------------------------------------------------- */
+
+/* Every base an image places a device at must be recorded, whichever tier the
+ * profile claims. This is the check the registry comment above promises and
+ * that nothing implemented: without it a host-tier profile compiled its way
+ * to a "<name>_BASE undeclared, did you mean" error from deep inside a
+ * driver, which names neither the profile nor the reason.
+ *
+ * The two tiers fail differently and the message says which, because they are
+ * different defects:
+ *
+ *   SOC_TIER_PAYLOAD  the profile claims it can build an image but left a
+ *                     base unrecorded — a profile bug, fix the header.
+ *   SOC_TIER_HOST     the profile is honest that it has no map, and the
+ *                     request to build a payload for it is the error —
+ *                     select a payload-tier profile instead.
+ *
+ * A plain assertion rather than a per-base #ifdef, because the failure it
+ * catches is a *recorded* one: a base left SOC_UNRECORDED must stop here
+ * with the profile's name in the message, rather than link an image that
+ * writes to ~0ULL. */
+#if !defined(DR1ZZLE_SOC_PAYLOAD_GATE)
+#define DR1ZZLE_SOC_PAYLOAD_GATE 1
+
+#define DR1ZZLE_SOC_GATE(base_macro, what) \
+    _Static_assert( \
+        (base_macro) != SOC_UNRECORDED, \
+        "payload gate: profile " DR1ZZLE_SOC_NAME \
+        " cannot build an image: " #base_macro " is SOC_UNRECORDED (" \
+        what "). Record it in include/soc/" DR1ZZLE_SOC_NAME ".h, or " \
+        "select a profile whose tier is SOC_TIER_PAYLOAD." \
+    )
+
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_UART_BASE,     "no console");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_TIMER_BASE,    "no architectural-counter delay");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_AIC_BASE,      "no interrupt delivery");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_PMGR_BASE,     "no clock or power control");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_GPIO_BASE,     "no pinmux");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_I2C_BASE,      "no I2C master");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_SPI_BASE,      "no SPI master");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_WATCHDOG_BASE, "no watchdog");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_NAND_BASE,     "no firmware store");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_USB_BASE,      "no goatloader transport");
+DR1ZZLE_SOC_GATE(DR1ZZLE_SOC_DCP_BASE,      "no AES engine");
+
+#endif /* DR1ZZLE_SOC_PAYLOAD_GATE */
+
 #define DR1ZZLE_SOC_CPID     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _CPID)
 #define DR1ZZLE_SOC_ARCH     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _ARCH)
 #define DR1ZZLE_SOC_TIER     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _TIER)

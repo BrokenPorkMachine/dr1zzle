@@ -85,7 +85,10 @@
  * These three are the reason a SEP-targeting payload needs a per-SoC profile,
  * and until now the registry carried none of them: the only SEP-facing
  * constant in the tree was MAILBOX_BASE below, which the reference work
- * explicitly flags as unverified. The first is the one that matters most --
+ * had flagged as unverified. That flag is now cleared -- the base and the
+ * register layout both come out of pongoOS and agree with the A11's own
+ * device tree and SecureROM literal, so all three constants below are
+ * measured rather than defaulted. The first is the one that matters most:
  * it is the A11 SEP's control window, and it is the strongest-sourced
  * address in this profile. */
 
@@ -109,8 +112,19 @@
 /* A11 AP SecureROM 3332.0.0.1.23 stores 0x243000000 as an 8-byte little-
  * endian literal at file offset 0x1c190, in its SEP-mail descriptor table.
  * The same base is present in config/soc/t8015.yaml.  This establishes the
- * AP-visible aperture's base, not a direct mapping of SEP-protected RAM and
- * not the FIFO/doorbell register layout; those remain unmeasured. */
+ * AP-visible aperture's base, not a direct mapping of SEP-protected RAM.
+ *
+ * The FIFO/doorbell register layout WAS the unmeasured half, and is no
+ * longer: pongoOS (checkra1n/pongoOS src/drivers/sep/sep.c) derives the
+ * mailbox from the same device-tree node -- /device-tree/arm-io/sep's reg
+ * plus gIOBase -- and places the A11's 64-bit mailbox at that base + 0x8100,
+ * with the message FIFO at +0x8800 (snd0) and +0x8830 (recv0). So the base
+ * and the layout now come from the same source and the same node, and
+ * include/sep.h implements that layout. The DT value and the AP-ROM literal
+ * agree, which is two independent readings rather than one carried forward.
+ *
+ * Note that this is why MAILBOX_BASE and SEP_BASE above are the same
+ * address: pongoOS reads one DT node and derives both windows from it. */
 #define SOC_T8015_MAILBOX_BASE       0x243000000ULL
 #define SOC_T8015_DCP_BASE           0x235000000ULL
 #define SOC_T8015_NOR_BASE           0x240000000ULL
