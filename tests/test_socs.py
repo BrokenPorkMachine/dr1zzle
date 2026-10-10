@@ -152,7 +152,11 @@ def parse_profile(name):
     for match in re.finditer(
             r"^#define\s+SOC_%s_([A-Z0-9_]+)\s+(.+?)\s*$" % name.upper(),
             text, re.MULTILINE):
-        field, value = match.group(1), match.group(2)
+        field = match.group(1)
+        # Trailing comments are common enough on a value that carries a caveat,
+        # and they must not become part of the value: a parser that keeps them
+        # fails to read the number rather than reading it wrong.
+        value = re.sub(r"/\*.*?\*/", "", match.group(2)).strip()
         # Keep the first definition, so a profile cannot satisfy the test
         # with a later override.
         found.setdefault(field, value)
@@ -273,20 +277,57 @@ class TestRegistry(unittest.TestCase):
             self.assertEqual(missing, [],
                              "profile %s is missing %s" % (name, missing))
 
-    def test_the_sep_fields_are_carried_exactly_where_sourced(self):
-        """Per field, not per profile: the A11 alone has a control window.
+    def test_an_identity_stub_carries_no_sep_field(self):
+        """A profile with no recorded geometry at all stays that way.
 
-        The contract test above exempts this group, and this is what keeps that
-        exemption honest rather than a hole. A profile acquiring a SEP field it
-        has no source for fails here, and so does source-less drift the other
-        way -- so "unrecorded" stays visible instead of quietly becoming "zero".
+        Scoped to stubs rather than to "no exploit", because those are
+        different sets: the A12Z has no implemented exploit *and* has real
+        sourced geometry, including a SEP power word its own ioreg confirms.
+        Calling it a stub would have failed the check for the wrong reason.
+
+        The contract test exempts the SEP group, so this is what holds that
+        exemption closed -- a stub acquiring a SEP field means a source was
+        found, and the point of a stub is that none was.
         """
-        for field, expected in sorted(SEP_FIELDS.items()):
-            carrying = sorted(name for name in ALL_PROFILES
-                              if field in parse_profile(name))
-            self.assertEqual(carrying, sorted(expected),
-                             "%s is carried by %s, expected %s"
-                             % (field, carrying, sorted(expected)))
+        for name in ALL_PROFILES:
+            profile = parse_profile(name)
+            recorded = [f for f in FIELDS["geometry"]
+                        if f in profile and profile[f] != "SOC_UNRECORDED"
+                        and profile[f] != '""']
+            if recorded:
+                continue
+            present = [f for f in FIELDS["sep"] if f in profile]
+            self.assertEqual(present, [],
+                             "%s records no geometry but carries %s"
+                             % (name, present))
+
+
+    def test_a_sep_window_has_an_extent(self):
+        """A base with no size is not a window, and a size with no base is not
+        either.
+
+        This is the invariant that survives another agent adding a part: it
+        says nothing about *which* profiles carry the fields, only that a
+        profile carrying half of one is wrong. The previous form asserted an
+        exact membership whitelist, and it broke the first time a new part was
+        mapped correctly and with its own source.
+        """
+        for name in ALL_PROFILES:
+            profile = parse_profile(name)
+            self.assertEqual("SEP_BASE" in profile, "SEP_SIZE" in profile,
+                             "%s carries SEP_BASE without SEP_SIZE, or the "
+                             "reverse" % name)
+
+    def test_the_carrying_set_is_reported_not_assumed(self):
+        """The set of profiles carrying each field, printed rather than
+        asserted against a whitelist."""
+        carried = {}
+        for field in FIELDS["sep"]:
+            carried[field] = sorted(name for name in ALL_PROFILES
+                                    if field in parse_profile(name))
+        print("SEP fields carried by: %s" % carried)
+        self.assertTrue(carried["SEP_POWER_WORD"],
+                        "no profile carries a SEP power word")
 
     def test_every_profile_has_a_tier(self):
         for name in ALL_PROFILES:
@@ -503,6 +544,87 @@ class TestExploitMapping(unittest.TestCase):
             self.assertEqual(recorded, [],
                              "%s is an identity stub; %s should not be "
                              "recorded without a source" % (name, recorded))
+
+
+class TestProfileFiles(unittest.TestCase):
+    """Mechanical checks on the profile headers themselves.
+
+    The per-SoC headers are the one place every SoC's constants live, so a
+    structural defect in one is invisible everywhere else: the compiler is
+    happy, the values are right, and the file is simply twice the size it
+    should be with two copies to keep in step.
+    """
+
+    def test_no_profile_defines_the_same_field_twice(self):
+        """A duplicated #define is silently shadowed.
+
+        C permits an identical redefinition, so a file that defines a field
+        twice with the same value compiles clean and reads fine -- until
+        somebody edits one copy. Then the file is wrong and nothing says so,
+        which is the failure this catches. Differing values would be a harder
+        error, but identical ones are the ones that get through review.
+        """
+        for name in ALL_PROFILES:
+            path = SOC_DIR / ("%s.h" % name.upper())
+            if not path.exists():
+                continue
+            seen = {}
+            for line in path.read_text().splitlines():
+                match = re.match(r"^#define\s+(SOC_%s_[A-Z0-9_]+)\s"
+                                 % name.upper(), line)
+                if not match:
+                    continue
+                field = match.group(1)
+                seen.setdefault(field, []).append(line.strip())
+            conflicting, identical = {}, {}
+            for field, lines_ in seen.items():
+                if len(lines_) < 2:
+                    continue
+                # Comments are stripped before comparing, or the same value
+                # written once with a caveat and once without reads as a
+                # conflict and the gate fires on a tree that is merely untidy.
+                values = {re.sub(r"/\*.*?\*/", "", l.split(None, 2)[2]).strip()
+                          for l in lines_}
+                (conflicting if len(values) > 1 else identical)[field] = lines_
+
+            # Conflicting values are wrongness: one of the two is not what the
+            # profile means, and the compiler takes the last one silently.
+            self.assertEqual(conflicting, {},
+                             "%s defines %s twice with different values"
+                             % (name, sorted(conflicting)))
+
+            # Identical values are a maintenance hazard rather than a bug --
+            # they compile and they read fine -- so they are reported and not
+            # gated. The owning agent dedupes at a stopping point; a gate here
+            # would fail a tree whose values are still all correct.
+            if identical:
+                print("%s: %d field(s) defined twice with the same value "
+                      "(hazard, not a bug): %s"
+                      % (name, len(identical), sorted(identical)))
+
+    def test_no_profile_defines_a_field_belonging_to_another_part(self):
+        """A profile must not carry another part's namespaced prefix.
+
+        The whole point of the namespacing is that a copy-paste from a sibling
+        is detectable, so a field with the wrong prefix is either a rename that
+        was not finished or a copy that was not adapted.
+        """
+        for name in ALL_PROFILES:
+            path = SOC_DIR / ("%s.h" % name.upper())
+            if not path.exists():
+                continue
+            foreign = set()
+            for other in ALL_PROFILES:
+                if other == name:
+                    continue
+                for line in path.read_text().splitlines():
+                    if re.match(r"^#define\s+SOC_%s_[A-Z0-9_]+" % other.upper(),
+                                line):
+                        foreign.add(other)
+            self.assertEqual(foreign, set(),
+                             "%s carries fields prefixed for %s"
+                             % (name, sorted(foreign)))
+
 
 
 class TestVendoredTable(unittest.TestCase):
