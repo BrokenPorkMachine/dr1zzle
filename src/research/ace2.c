@@ -6,6 +6,14 @@
 
 static volatile uint32_t *ace2 = (volatile uint32_t *)ACE2_BASE;
 
+static int ace2_valid_port(int port) {
+    if (port >= 0 && port < ACE2_MAX_PORTS) {
+        return 1;
+    }
+    uart_puts("ACE2: invalid port (expected 0-7)\n");
+    return 0;
+}
+
 static inline uint32_t ace2_read(uint32_t offset) {
     return ace2[offset / 4];
 }
@@ -28,7 +36,10 @@ void ace2_init(void) {
     
     /* Reset controller */
     ace2_write(0x10, 1); /* USBCMD: Run/Stop = 0, HCReset = 1 */
-    while (ace2_read(0x10) & 1) {} /* Wait for reset */
+    if (timer_wait_reg(&ace2[0x10 / 4], 1, 0, 10000) != 0) {
+        uart_puts("ACE2: controller reset timed out; refusing to configure it\n");
+        return;
+    }
     
     /* Set frame list base address */
     ace2_write(0x24, (uint32_t)0x180010000UL); /* PeriodicListBase */
@@ -62,6 +73,7 @@ void ace2_dump(void) {
 }
 
 void ace2_port_reset(int port) {
+    if (!ace2_valid_port(port)) return;
     uint32_t portsc = ace2_read(0x44 + port * 4);
     ace2_write(0x44 + port * 4, portsc | (1 << 8)); /* Port Reset */
     timer_sleep_ms(50);
@@ -70,11 +82,13 @@ void ace2_port_reset(int port) {
 }
 
 void ace2_port_enable(int port) {
+    if (!ace2_valid_port(port)) return;
     uint32_t portsc = ace2_read(0x44 + port * 4);
     ace2_write(0x44 + port * 4, portsc | (1 << 2)); /* Port Enable */
 }
 
 void ace2_dump_port_status(int port) {
+    if (!ace2_valid_port(port)) return;
     uint32_t portsc = ace2_read(0x44 + port * 4);
     uart_puts("PORTSC["); uart_puts(utoa(port)); uart_puts("] = 0x");
     uart_puts(utoa_hex(portsc)); uart_puts("\n");
