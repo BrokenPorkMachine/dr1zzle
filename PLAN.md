@@ -201,29 +201,29 @@ print GID-derived key bytes to the console.
 
 ---
 
-## Phase 5: ACE2 + SEP (Week 8) ⏳ PENDING
+## Phase 5: ACE2 + SEP (Week 8) ⚠️ RESEARCH IMPLEMENTATION COMPLETE; HARDWARE VERIFICATION PENDING
 
 ### Deliverables
 - [ ] ACE2/ACE3 register dump (all 100+ regs)
-- [ ] SEP mailbox client (opcodes 0x05/0x06/0x10/0x11/0xFF)
-- [ ] SEP command shell integration
+- [x] SEP mailbox client (research implementation; hardware unverified)
+- [x] SEP command shell integration (host-tested; hardware unverified)
 
 ### Tasks
 | Task | File | Reference | Status |
 |------|------|-----------|--------|
 | ACE2 register map (DWC2 host + Apple) | `src/drivers/ace2.c` | DWC2 host + Apple ext | ⏳ |
 | ACE2 dump all registers command | `ace2.c` | — | ⏳ |
-| SEP mailbox register map | `src/drivers/sep.c` | AppleAscMailbox | ⏳ |
-| SEP send_command(opcode, data) | `sep.c` | pongoOS sep.c | ⏳ |
-| SEP opcodes: ping, get_random, boot_tz0 | `sep.c` | pongoOS sep.c | ⏳ |
-| Shell: ace2 dump, sepos <cmd> | `src/shell/shell.c` | — | ⏳ |
+| SEP mailbox register map | `src/drivers/sep.c` | PongoOS `mailbox_registers64` | research-complete; hardware unverified |
+| SEP send_command(opcode, data) | `sep.c` | PongoOS `sep.c` | research-complete; hardware unverified |
+| SEP opcodes: ping, get_random, boot_tz0 | `sep.c` | PongoOS `sep.c` | research-complete; hardware unverified |
+| Shell: ace2 dump, sepos <cmd> | `src/shell/shell.c` | — | research-complete; hardware unverified |
 
 ### Acceptance Criteria
 ```
 research> ace2 dump → 100+ registers (CAPLENGTH, PORTSC, etc.)
-research> sepos ping → PONG (<10 ms)
-research> sepos get_random → 32 random bytes
-research> sepos boot_tz0 <sepOS> → ACK/NAK
+research> sepos ping → PONG (<10 ms)       [hardware gate]
+research> sepos get_random → 32 random bytes [hardware gate]
+research> sepos boot_tz0 <sepOS> → ACK/NAK    [hardware gate]
 ```
 
 ---
