@@ -175,14 +175,12 @@ per part, where a source establishes them.
 | t8027 (A12Z) | unrecorded | 0x23B080600 |
 | t8030 (A13) | unrecorded | 0x23B080C00 |
 
-The A11 control window is the strongest-sourced address in this registry and it
-was missing entirely: `DeviceTree.d22ap`'s `/arm-io/sep` node gives
+The A11 SEP control window is the strongest-sourced address in this registry:
+`DeviceTree.d22ap`'s `/arm-io/sep` node gives
 `reg = 0x43000000 + 0x1000` with the `aarch64` flag present on `sep` and on
-nothing else. That is the first A11 SEP address the reference project
-established, and unlike the mailbox base below it is read out of a device tree
-rather than carried forward as a default. A payload that puts an OS on the
-enclave needs this window; without it the AP has no way to address the SEP's
-own control registers.
+nothing else. Combined with the recorded `gIOBase`, this resolves the SEP
+control node at `0x243000000`; it does not by itself resolve the mailbox
+resource base or authorize AP writes into protected SEP RAM.
 
 The SEP power word is the other half. It is the PMGR `ps-reg` entry that gates
 whether the enclave is powered, and it is the word each part's SecureROM polls
@@ -191,14 +189,15 @@ clearest demonstration that per-part records matter: the A12 and A12Z use
 `+0x600`, the A13 uses `+0xc00` in the same plane, and the reference tree is
 explicit that copying the A12's word onto the A13 would be wrong.
 
-One thing this fixes about the A11 specifically: the only SEP-facing constant
-the tree had was `SOC_T8015_MAILBOX_BASE = 0x23C000000`, and
-`src/research/sepos.c` builds its entire mailbox client on it. The reference
-project is explicit that no device tree holds that value, that no SecureROM
-literal names it, and that it was "deliberately left as the legacy value rather
-than guessed". So the SEP mailbox path in this tree rests on an address nobody
-has established. The profile now says so at the point of definition, so the
-assumption is visible where it is used rather than buried in a driver.
+The A11 AP SecureROM also contains the 8-byte literal `0x243000000` at file
+offset `0x1c190`, in a SEP-mail descriptor table. That establishes an
+AP-visible aperture base, not FIFO offsets. The independent mailbox census
+records accesses in the `0x243008000` window. PongoOS's A11-specific source
+derives its mailbox structures from the SEP DeviceTree register and places
+control registers at `+0x8100` and message FIFOs at `+0x8800`/`+0x8830`.
+These are useful cross-checks, but the project has not captured a complete
+hardware request/reply exchange. The old `0x23C000000` value remains
+unestablished for A11 and must not be used as a measured base.
 
 ## Promoting a profile
 
