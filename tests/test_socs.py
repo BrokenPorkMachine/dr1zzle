@@ -61,6 +61,17 @@ IDENTITY_STUB_PROFILES = ["t8021"]
 
 ALL_PROFILES = PROFILES + USBLITER8_PROFILES + NO_EXPLOIT_PROFILES
 
+# The SEP interface, per field, per part. The A11 is the only part with a
+# DT-cited control window, so only it carries SEP_BASE/SEP_SIZE; the A12/A12X/A13
+# SEP power words come from the reference tree's cross-part ps-reg table and are
+# carried on their own. Everything else has no SEP source here and carries none,
+# rather than a guessed one -- which is the point of listing it per field.
+SEP_FIELDS = {
+    "SEP_BASE": ["t8015"],
+    "SEP_SIZE": ["t8015"],
+    "SEP_POWER_WORD": ["t8015", "t8020", "t8027", "t8030"],
+}
+
 # The contract. Each profile must define every one of these, or the drivers
 # that use them fail at the use site instead of here.
 FIELDS = {
@@ -73,6 +84,12 @@ FIELDS = {
         "ROM_SHA1", "NONCE_LENGTH", "SEP_NONCE_LENGTH", "DEMOTION_REG",
         "DFU_TRIGGER",
     ],
+    # The SEP interface. Present on every profile that has a source for it,
+    # absent on the identity stub -- the stub test is what pins that absence.
+    # This is the geometry a SEP-targeting payload actually depends on, and it
+    # was unrecorded for every part until the A11/A12/A12Z/A13 profiles gained
+    # it; before that the registry described the AP and nothing else.
+    "sep": ["SEP_BASE", "SEP_SIZE", "SEP_POWER_WORD"],
 }
 
 # Fields a host-tier profile is not expected to carry: only the payload tier
@@ -251,9 +268,25 @@ class TestRegistry(unittest.TestCase):
             profile = parse_profile(name)
             missing = [field
                        for group in FIELDS.values() for field in group
-                       if field not in profile]
+                       if group is not FIELDS["sep"]
+                       and field not in profile]
             self.assertEqual(missing, [],
                              "profile %s is missing %s" % (name, missing))
+
+    def test_the_sep_fields_are_carried_exactly_where_sourced(self):
+        """Per field, not per profile: the A11 alone has a control window.
+
+        The contract test above exempts this group, and this is what keeps that
+        exemption honest rather than a hole. A profile acquiring a SEP field it
+        has no source for fails here, and so does source-less drift the other
+        way -- so "unrecorded" stays visible instead of quietly becoming "zero".
+        """
+        for field, expected in sorted(SEP_FIELDS.items()):
+            carrying = sorted(name for name in ALL_PROFILES
+                              if field in parse_profile(name))
+            self.assertEqual(carrying, sorted(expected),
+                             "%s is carried by %s, expected %s"
+                             % (field, carrying, sorted(expected)))
 
     def test_every_profile_has_a_tier(self):
         for name in ALL_PROFILES:
@@ -308,6 +341,73 @@ class TestRegistry(unittest.TestCase):
                 self.assertEqual(present, [],
                                  "host-tier profile %s carries %s, which it "
                                  "has no map for" % (name, present))
+
+
+class TestSepGeometry(unittest.TestCase):
+    """The SEP interface, which the registry had not recorded at all.
+
+    These fields are the ones a SEP-targeting payload depends on, and they are
+    separate from the AP-side map: the SEP is a different processor with its
+    own control window and its own power gate. Recording only the AP made the
+    registry look complete while saying nothing about the endpoint.
+    """
+
+    # The SEP power-state word per part, read from the reference tree's own
+    # cross-part pmgr ps-reg table. The A11 is the entry its table names for
+    # that part, the A12/A12X share d321ap's ps-reg[5], and the A13 is at a
+    # different offset entirely.
+    SEP_POWER_WORDS = {
+        "t8015": 0x232080400,   # A11  ps-reg[5] 0x00080400
+        "t8020": 0x23B080600,   # A12  ps-reg[5] 0x00080600
+        "t8027": 0x23B080600,   # A12X ps-reg[5] 0x00080600
+        "t8030": 0x23B080C00,   # A13  plane 8 +0xc00, a different offset
+    }
+
+    def test_the_sep_window_is_recorded_where_a_source_establishes_it(self):
+        for name, expected in sorted(self.SEP_POWER_WORDS.items()):
+            profile = parse_profile(name)
+            self.assertIn("SEP_POWER_WORD", profile,
+                          "%s should carry a SEP power word" % name)
+            self.assertEqual(as_int(profile["SEP_POWER_WORD"]), expected,
+                             "%s: SEP power word does not match the "
+                             "reference ps-reg table" % name)
+
+    def test_the_a13_offset_is_not_the_a12s(self):
+        """The two A12-generation parts use +0x600 and the A13 uses +0xc00 in
+        the same PMGR plane. The reference tree is explicit that copying the
+        A12's word onto the A13 would be wrong, so the difference is pinned
+        rather than left to a reader to notice."""
+        band = 0x23B000000
+        a12 = as_int(parse_profile("t8020")["SEP_POWER_WORD"]) - band
+        a13 = as_int(parse_profile("t8030")["SEP_POWER_WORD"]) - band
+        self.assertNotEqual(a12, a13)
+        self.assertEqual(a12 & 0xFFF, 0x600)
+        self.assertEqual(a13 & 0xFFF, 0xC00)
+
+    def test_the_a11_sep_control_window_is_the_dt_cited_one(self):
+        """The strongest-sourced address in the whole registry, and it was
+        missing until now. DeviceTree.d22ap's /arm-io/sep gives
+        reg = 0x43000000 + 0x1000 with the aarch64 flag present."""
+        profile = parse_profile("t8015")
+        self.assertEqual(as_int(profile["SEP_BASE"]), 0x243000000)
+        self.assertEqual(as_int(profile["SEP_SIZE"]), 0x1000)
+
+    def test_the_pmgr_band_is_the_power_words_band(self):
+        """Every part with a recorded SEP power word must have its PMGR in the
+        same band as that word.
+
+        This is the check that catches the error this commit corrects: the
+        A12/A12X profiles carried pmgr_base 0x20e000000 from a shared yaml
+        while the A12's own power word sits at 0x23b080600. A profile can be
+        self-consistent and still wrong, and the band is what shows it."""
+        for name, word in sorted(self.SEP_POWER_WORDS.items()):
+            profile = parse_profile(name)
+            self.assertIn("PMGR_BASE", profile,
+                          "%s should carry a PMGR base" % name)
+            band = as_int(profile["PMGR_BASE"])
+            self.assertEqual(word & ~0xFFFFFF, band,
+                             "%s: PMGR base 0x%x is not the band the SEP "
+                             "power word 0x%x sits in" % (name, band, word))
 
 
 class TestExploitMapping(unittest.TestCase):

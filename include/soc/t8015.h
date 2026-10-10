@@ -58,6 +58,19 @@
 
 #define SOC_T8015_SRAM_BASE          0x180000000ULL
 #define SOC_T8015_SRAM_SIZE          0x1E8000ULL
+#define SOC_T8015_DRAM_SIZE          0x80000000ULL
+
+/* A11 bring-up defaults. CNTFRQ_EL0 is read at runtime; the fallback is only
+ * used if firmware left the architectural counter frequency unset. */
+#define SOC_T8015_UART_CLOCK_HZ      24000000u
+#define SOC_T8015_UART_BAUD_RATE     115200u
+#define SOC_T8015_TIMER_FALLBACK_HZ  24000000ULL
+#define SOC_T8015_I2C_REF_CLK_HZ     24000000u
+#define SOC_T8015_SPI_REF_CLK_HZ     24000000u
+#define SOC_T8015_WDT_REF_CLK_HZ     24000000u
+
+/* The core owns the SRAM tail while a firmware image is running. */
+#define SOC_T8015_FIRMWARE_LOAD_OFFSET 0x100000ULL
 
 #define SOC_T8015_SECURE_ROM_BASE    0x100000000ULL
 #define SOC_T8015_SECURE_ROM_SIZE    0x100000ULL
@@ -66,7 +79,39 @@
 #define SOC_T8015_TIMER_BASE         0x20E100000ULL
 #define SOC_T8015_AIC_BASE           0x232100000ULL
 #define SOC_T8015_PMGR_BASE          0x232000000ULL
-#define SOC_T8015_MAILBOX_BASE       0x23C000000ULL
+
+/* --- The SEP interface, which this tree had not recorded at all ------------
+ *
+ * These three are the reason a SEP-targeting payload needs a per-SoC profile,
+ * and until now the registry carried none of them: the only SEP-facing
+ * constant in the tree was MAILBOX_BASE below, which the reference work
+ * explicitly flags as unverified. The first is the one that matters most --
+ * it is the A11 SEP's control window, and it is the strongest-sourced
+ * address in this profile. */
+
+/* The A11 SEP control window: 4 KiB, AArch64, DT-cited. DeviceTree.d22ap's
+ * /arm-io/sep node gives reg = 0x43000000 + 0x1000 with the aarch64 flag
+ * present on sep and on nothing else. This is the first A11 SEP address the
+ * reference project established, and unlike MAILBOX_BASE it is read out of a
+ * device tree rather than carried forward as a default.
+ *
+ * A payload that puts an OS on the enclave needs this window; without it the
+ * AP has no way to address the SEP's own control registers. */
+#define SOC_T8015_SEP_BASE           0x243000000ULL
+#define SOC_T8015_SEP_SIZE           0x1000ULL
+
+/* The A11's SEP power-state word: pmgr ps-reg[5] = 0x00080400, flags 1, in
+ * the same 0x2320 PMGR band as PMGR_BASE above. It is the word something
+ * writes 0xf0 to before the enclave can be brought up, so it gates the whole
+ * SEP path exactly as the same entry does on the A12/A12X/A13. */
+#define SOC_T8015_SEP_POWER_WORD     0x232080400ULL
+
+/* A11 AP SecureROM 3332.0.0.1.23 stores 0x243000000 as an 8-byte little-
+ * endian literal at file offset 0x1c190, in its SEP-mail descriptor table.
+ * The same base is present in config/soc/t8015.yaml.  This establishes the
+ * AP-visible aperture's base, not a direct mapping of SEP-protected RAM and
+ * not the FIFO/doorbell register layout; those remain unmeasured. */
+#define SOC_T8015_MAILBOX_BASE       0x243000000ULL
 #define SOC_T8015_DCP_BASE           0x235000000ULL
 #define SOC_T8015_NOR_BASE           0x240000000ULL
 #define SOC_T8015_BLOCK_BASE         0x241000000ULL

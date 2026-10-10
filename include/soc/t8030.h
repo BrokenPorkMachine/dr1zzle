@@ -52,6 +52,16 @@
 #define SOC_T8030_SECURE_ROM_BASE     0x100000000ULL
 #define SOC_T8030_SECURE_ROM_SIZE     0x30000ULL
 
+/* The A13's PMGR is in the 0x23b0 band like its siblings, not the 0x20e
+ * band the T802x yaml defaults to. Its power-state word is at plane 8
+ * +0xc00, which is a *different offset* from the A12/A12X's +0x600 -- the
+ * A13 doc is explicit that copying the A12's word here would be wrong, and
+ * that the neighbour at +0xc08 is not polled and is left cold. 733,007 reads
+ * and exactly one write, of value 0, so this is a hardware-owned readiness
+ * word the guest cannot drive. */
+#define SOC_T8030_PMGR_BASE           0x23B000000ULL
+#define SOC_T8030_SEP_POWER_WORD      0x23B080C00ULL
+
 /* The exploit's own addressing, kept because the next measurement for this
  * part is an exploit measurement. These are the A13's SRAM-side scratch, the
  * relocated ROM copy the shellcode builds, and the page-table root it

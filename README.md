@@ -1,9 +1,14 @@
-# dr1zzle OpenSEP
+# dr1zzle OpenEyeBoot
 
-`dr1zzle` is a clean-room, freestanding C boot-monitor foundation. It is built
+`dr1zzle` is a clean-room, freestanding C boot-monitor foundation for the
+application-processor side of the DFU-loaded target. It is built
 around an independently-written libc (`libdrizzle`) and a safe QEMU Arm `virt`
 development target. It does not include exploitation, signing bypasses, device
 restore, Apple-specific hardware maps, or physical-device transport code.
+
+The `OpenEyeBoot` name is deliberate: a DFU payload is loaded and executed on
+the AP. SEP is a separate coprocessor behind the AP-visible mailbox; the
+planned SEP commands here are AP-side mailbox clients, not SEP firmware.
 
 ## What works today
 
@@ -62,9 +67,14 @@ A12/A12X/A12Z/A13 profiles are recorded, and one (the A11) has the peripheral
 map needed to build an image. Host-tier selections such as `make SOC=t8010`
 and `make SOC=t8020` are refused with a message naming the profile rather than
 failing on an address that was never measured, and `goat pwn` refuses a part
-checkm8 cannot reach before attempting the exploit. The registry is checked
-against the vendored sources by `make soc-test`; see [docs/SOCS.md](docs/SOCS.md) for
-the exploit-family and evidence boundaries.
+checkm8 cannot reach before attempting the exploit.
+
+The registry records the **SEP** interface as well as the application-processor
+map — the enclave's control window where a source establishes one, and the
+per-part power gate that decides whether it is powered — because that is where
+an image actually runs. The registry is checked against the vendored sources by
+`make soc-test`; see [docs/SOCS.md](docs/SOCS.md) for the exploit-family and
+evidence boundaries.
 
 `scripts/run-qemu.sh` builds the portable monitor profile for QEMU. Its default
 mode mirrors text to a 640×240 display window while keeping UART input and

@@ -51,7 +51,29 @@
 #define SOC_T8020_UART_BASE           0x20A0C0000ULL
 #define SOC_T8020_TIMER_BASE          0x20E100000ULL
 #define SOC_T8020_AIC_BASE            0x23B100000ULL
-#define SOC_T8020_PMGR_BASE           0x20E000000ULL
+
+/* Corrected. The T802x yaml I first copied this from records
+ * pmgr: 0x20E000000, and that is the wrong band for this part -- the A12X
+ * measurement that follows it is explicit: "The shared pmgr_base:
+ * 0x20e000000 is therefore the wrong band for this part." The A12's own
+ * composed movz/movk bases and its d321ap pmgr ps-reg entry both name the
+ * 0x23b0 band instead, and its first PMGR plane is 0x30000 wide (ten 16 KiB
+ * entries at 0x4000 stride), not one page.
+ *
+ * Recorded as a correction rather than an edit, because the earlier value
+ * was committed and the shape of the error matters: a platform config that
+ * is right for one part and one generation can be wrong for a sibling, and
+ * copying the sibling's file is how that survives review. */
+#define SOC_T8020_PMGR_BASE           0x23B000000ULL
+#define SOC_T8020_PMGR_FIRST_PLANE    0x30000ULL
+
+/* The SEP power-state word. This is SEP-facing geometry rather than AP-side:
+ * it is the PMGR ps-reg entry (d321ap ps-reg[5] = 0x00080600, flags 1) that
+ * gates whether the Secure Enclave is powered, and it is the word the A12's
+ * SecureROM polls with (w & 0xf0) == 0xf0 before it will bring the SEP up.
+ * It is the reason this profile matters to a SEP-targeting OS: without it the
+ * AP cannot get the enclave to the state where it would accept a payload. */
+#define SOC_T8020_SEP_POWER_WORD      0x23B080600ULL
 
 /* usbliter8's t8020 shellcode places its trampoline and DMA targets in this
  * window, which is how the SRAM base is established for the part. The extent

@@ -134,7 +134,7 @@ any source at all differ in the places that matter:
 | SRAM base | 0x180000000 | 0x19C000000 | 0x19C000000 |
 | ROM size | 0x100000 | 0x100000 | **0x30000** |
 | AIC | 0x232100000 | **0x23B100000** | unrecorded |
-| PMGR | 0x232000000 | **0x20E000000** | unrecorded |
+| PMGR | 0x232000000 | **0x23B000000** | 0x23B000000 |
 
 An A11-shaped assumption would misplace the interrupt controller and the power
 manager on the A12 and read a fifth of the A13's ROM. Everything not in that
@@ -142,12 +142,63 @@ table is `SOC_UNRECORDED` in those profiles — a value distinct from `0x0` and
 from any plausible address, so a placement rule built on a field nobody
 sourced cannot be confused with one that was.
 
+The A12 PMGR entry is a correction rather than a first draft. It read
+`0x20E000000` when these profiles were committed, copied from the shared T802x
+yaml, and the A12X measurement that came after it says plainly that "the shared
+pmgr_base: 0x20e000000 is therefore the wrong band for this part": the A12's own
+composed `movz`/`movk` bases name the `0x23b0` band instead, and its first PMGR
+plane is `0x30000` — ten 16 KiB entries at `0x4000` stride — not one page. The
+shape of that error is worth keeping in mind: a platform config that is right
+for one part can be wrong for a sibling, and copying the sibling's file is how
+that survives review. `test_the_pmgr_band_is_the_power_words_band` is what
+catches it now, by requiring a part's PMGR band to contain its own SEP power
+word.
+
 The A12X (T8021) is the extreme case: no reference tree in this registry
 carries a platform record for it, so its profile records the CPID, the
 architecture, and nothing else. It exists so that a device in DFU can be named
 and refused rather than attempted, and `make soc-test` enforces the exception —
 a stub that acquires a field means somebody found a source and needs to cite
 it.
+
+## The SEP interface
+
+**dr1zzle does not run on the application processor. It runs on the SEP**, so
+the registry's most important geometry is the one it did not have: until now it
+described the AP of every part and the enclave of none. Three fields close that,
+per part, where a source establishes them.
+
+| | SEP control window | SEP power word |
+|---|---|---|
+| t8015 (A11) | **0x243000000 + 0x1000** | 0x232080400 |
+| t8020 (A12) | unrecorded | 0x23B080600 |
+| t8027 (A12Z) | unrecorded | 0x23B080600 |
+| t8030 (A13) | unrecorded | 0x23B080C00 |
+
+The A11 control window is the strongest-sourced address in this registry and it
+was missing entirely: `DeviceTree.d22ap`'s `/arm-io/sep` node gives
+`reg = 0x43000000 + 0x1000` with the `aarch64` flag present on `sep` and on
+nothing else. That is the first A11 SEP address the reference project
+established, and unlike the mailbox base below it is read out of a device tree
+rather than carried forward as a default. A payload that puts an OS on the
+enclave needs this window; without it the AP has no way to address the SEP's
+own control registers.
+
+The SEP power word is the other half. It is the PMGR `ps-reg` entry that gates
+whether the enclave is powered, and it is the word each part's SecureROM polls
+with `(w & 0xf0) == 0xf0` before it will bring the SEP up. It is also the
+clearest demonstration that per-part records matter: the A12 and A12Z use
+`+0x600`, the A13 uses `+0xc00` in the same plane, and the reference tree is
+explicit that copying the A12's word onto the A13 would be wrong.
+
+One thing this fixes about the A11 specifically: the only SEP-facing constant
+the tree had was `SOC_T8015_MAILBOX_BASE = 0x23C000000`, and
+`src/research/sepos.c` builds its entire mailbox client on it. The reference
+project is explicit that no device tree holds that value, that no SecureROM
+literal names it, and that it was "deliberately left as the legacy value rather
+than guessed". So the SEP mailbox path in this tree rests on an address nobody
+has established. The profile now says so at the point of definition, so the
+assumption is visible where it is used rather than buried in a driver.
 
 ## Promoting a profile
 
@@ -197,6 +248,11 @@ that are supposed to be authoritative for it:
   while the T8021 stub is prevented from acquiring unsourced geometry;
 - the geometry in each profile matches `ipwndfu/device_platform.py`, so a
   transcription error in either direction fails the test rather than a device;
+- each part's PMGR band contains its own SEP power word — the check that
+  caught the A12's wrong `0x20e000000` PMGR, and the reason a profile that is
+  self-consistent can still be caught being wrong;
+- the SEP fields are carried exactly where a source establishes them, per field
+  rather than per profile, so "unrecorded" cannot quietly become zero;
 - the DFU trigger matches `ipwndfu/checkm8.py`'s per-CPID device configuration;
 - exactly one profile is payload tier, and it maps every block in
   `SOC_BLK_PAYLOAD`;

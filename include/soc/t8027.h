@@ -52,7 +52,20 @@
 #define SOC_T8027_UART_BASE           0x20A0C0000ULL
 #define SOC_T8027_TIMER_BASE          0x20E100000ULL
 #define SOC_T8027_AIC_BASE            0x23B100000ULL
-#define SOC_T8027_PMGR_BASE           0x20E000000ULL
+
+/* Same correction as the T8020, and the same reason for recording it: the
+ * T802x yaml's pmgr: 0x20e000000 is the wrong band for this part too. The
+ * A12X measurement names the 0x23b0 band outright -- 0x23b000000, the six
+ * ways it is composed, and 0x23b080600 among them -- and its first plane is
+ * 0x30000, ten 16 KiB entries at 0x4000 stride, not one page. */
+#define SOC_T8027_PMGR_BASE           0x23B000000ULL
+#define SOC_T8027_PMGR_FIRST_PLANE    0x30000ULL
+
+/* The A12X's SEP power-state word, the same d321ap ps-reg[5] entry (0x00080600,
+ * flags 1) at the same physical address the A12 uses, independently confirmed
+ * by its own ioreg dump. Same significance as the T8020's: this is the word
+ * that decides whether the enclave is powered. */
+#define SOC_T8027_SEP_POWER_WORD      0x23B080600ULL
 
 #define SOC_T8027_SRAM_BASE           0x19C000000ULL
 #define SOC_T8027_SRAM_SIZE           SOC_UNRECORDED
