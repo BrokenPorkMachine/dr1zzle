@@ -400,7 +400,7 @@ size: $(BUILD_DIR)/$(TARGET).elf
 
 # Portable, budget-enforced QEMU hardware profiles (separate from A11 payload).
 PROFILE ?= small
-.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test ipwndfu-test menu-test soc-test
+.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test sep-test soc-test ipwndfu-test menu-test
 profiles:
 	$(MAKE) -f boards/Makefile PROFILE=$(PROFILE)
 profiles-test:
@@ -425,6 +425,12 @@ goat-test:
 
 loader-test:
 	python3 tests/test_goatloader.py
+
+# The SEP work: the mailbox protocol against pongoOS and captured traces, and
+# the shell-wrapper layer that owns the static driver instance.
+sep-test:
+	python3 tests/test_sep.py
+	python3 tests/test_sepos_wrappers.py
 
 # The SoC registry is checked against the vendored checkm8 sources and, when
 # present, the local usbliter8 reference. No device is involved.

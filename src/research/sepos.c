@@ -23,6 +23,35 @@ static struct sep_driver sep_drv;
 static bool sep_init_attempted;
 static int sep_init_result = SEP_ERR_INVALID;
 
+#ifdef SEP_HOST_TEST
+/* Host-test-only hooks. The wrapper layer owns one static driver, a one-shot
+ * init latch, and the choice of base — and a test needs all three redirected,
+ * because MAILBOX_BASE is a real SoC address (0x243000000 on the A11) that
+ * the lazy init path would write to and fault on.
+ *
+ * Guarded so the firmware image does not carry a redirect for state it is
+ * allowed to own. */
+void sepos_test_reset_for_host_test(void) {
+    sep_init_attempted = false;
+    sep_init_result = SEP_ERR_INVALID;
+    sep_reset_stats(&sep_drv);
+    sep_drv.base = NULL;
+}
+
+/* Attach the wrapper's driver to a caller-supplied base and mark the lazy
+ * init as already done, so no command writes to the profile's real base. */
+void sepos_test_attach(uint64_t base) {
+    sep_init_attempted = true;
+    sep_init_result = sep_init(&sep_drv, base);
+}
+
+/* Accessor for the owned driver, so a test can read base/timeout/irq_mode and
+ * the statistics without the wrapper having to expose them in production. */
+struct sep_driver *sepos_test_driver(void) {
+    return &sep_drv;
+}
+#endif
+
 static int sepos_ensure_init(void) {
     if (!sep_init_attempted) {
         sep_init_attempted = true;

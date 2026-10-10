@@ -78,11 +78,35 @@
   - `sep_get_status()` — reads status register
 - Unit test: `tests/sep_test.c` driven by `make host-test`, using a fake MMIO region.
 
-**STATUS: HOST-TESTED SCAFFOLD; HARDWARE PATH DISABLED.** The initial offsets
-were not the T8015 FIFO map. Production `sep_init()` now returns
-`SEP_ERR_UNSUPPORTED` without retaining a usable MMIO pointer or touching
-registers. The host fake-MMIO build is explicitly enabled with
-`SEP_TEST_MMIO`.
+**STATUS: COMPLETE — protocol-correct against pongoOS, hardware-untested.**
+
+The register map in section 2.1 above is the original unverified proposal and
+is WRONG: it is the 32-bit layout, and the A11 uses a different 64-bit one. It
+is retained for history because it is what was first built. The audit that
+replaced it is recorded in
+`docs/A11_SEP_MAILBOX_PROTOCOL_AUDIT_2026-10-10.md` at the OpenEyeOS root.
+
+What `include/sep.h` now implements, from pongoOS `struct mailbox_registers64`:
+
+```c
+#define SEP_MBOX_DIS_INT   0x8100   /* write 0x1000 to disable the inbox interrupt */
+#define SEP_MBOX_EN_INT    0x8104   /* write 0x1000 to enable it */
+#define SEP_MBOX_SND_STS   0x8108
+#define SEP_MBOX_RECV_STS  0x810C   /* bit 17 (0x20000) = queue EMPTY */
+#define SEP_MBOX_SND0      0x8800   /* AP->IOP message, 64-bit */
+#define SEP_MBOX_SND1      0x8808   /* written 0 alongside snd0 */
+#define SEP_MBOX_RECV0     0x8830   /* IOP->AP reply, 64-bit */
+#define SEP_MBOX_RECV1     0x8838   /* read and discarded by pongoOS */
+```
+
+That is the complete register set. There is NO reply doorbell and NO ack
+register in either pongoOS layout, so the driver provides neither: reading
+`recv0` is the whole consumption path, exactly as `sep_check_mailbox()` reads
+`recv0` and returns. `tests/sep_test.c` pins the set as a count as well as by
+value, so a ninth offset cannot be added without failing a test.
+
+`sep_send_raw()` replaces the old `sep_send_command()`; `sep_get_status()` is
+replaced by `sep_recv_status()`. See the header for the current API.
 
 ---
 
@@ -106,15 +130,24 @@ registers. The host fake-MMIO build is explicitly enabled with
   consumes `recv1`); do not treat any nonzero data word as proof of a reply.
 
 ### 3.2 Deliverable
-- `sep_send_command()` in `sep.c` handles all five opcodes with proper framing.
-- Timeout: 1 second for ping/random, 5 seconds for boot_tz0.
-- Returns structured error codes (timeout, NAK, malformed reply).
+- `sep_send_raw()` in `sep.c` handles all opcodes with proper framing.
+- Per-opcode timeouts; structured error codes (timeout, NAK, panic, malformed).
 
-**STATUS: RESEARCH-ONLY / INCOMPLETE.** The previous driver encoded the
-wrong message and assumed doorbells. The checked-in host suite still exercises
-that legacy fake transport only. Port the PongoOS A11 message/FIFO layout into
-the test model, preserve the production no-MMIO guard, and do not infer NAK or
-command completion behavior beyond the cited source.
+**STATUS: COMPLETE — implemented and host-tested; no real SEP exchange.**
+
+The §3.1 table above is correct and is what the driver implements. The one
+correction to its history: the first draft of `sep.c` used opcode `0xFF` for
+ping and encoded `[flags:16][opcode:16][payload:32]` instead of the packed
+`{ep, tag, opcode, param, data}`. Ping was wrong in all five opcodes'
+neighbourhood and `send_sepos` invented a 4-word metadata protocol pongoOS
+does not use. That is now fixed and pinned by tests.
+
+`SEP_TEST_MMIO` and the production no-MMIO guard are both gone: the driver
+retains a real MMIO pointer unconditionally, because there is no longer a
+distinction between a "scaffold" build and a "production" one — the transport
+is either the real mailbox base from the SoC profile, or nothing. What
+`sep_init()` cannot know is whether that base is right, and it does not claim
+to; see the non-claims in the audit record.
 
 ---
 
@@ -126,19 +159,24 @@ sepos <ping|random|boot_tz0|status|memdump>
 ```
 
 ### 4.2 Required Implementation
-- `sepos ping` → calls `sep_send_command(0xFF, ...)`, prints "SEP ping OK" or "SEP ping failed (timeout/NAK)"
-- `sepos random` → calls `sep_send_command(0x10, ...)`, prints 32 bytes hex
-- `sepos boot_tz0 [addr]` → if addr given, sends as payload; else uses default SEPOS load address from NAND slot 0
-- `sepos send_sepos [slot]` → stages SEPOS from NAND slot, sends opcode 0x06
-- `sepos status` → reads and prints mailbox status registers
-- `sepos memdump <addr> <len>` → NOT YET SUPPORTED (requires SEPOS-side cooperation); print clear message
+- `sepos ping` → `sepos_ping()`, prints "SEP ping OK" or "SEP ping failed"
+- `sepos random` → `sepos_get_random()`, prints 32 bytes hex
+- `sepos boot_tz0` → `sepos_boot_tz0()`, which configures the integrity tree first as pongoOS does
+- `sepos send_sepos <phys> [size [entry]]` → `sepos_send_sepos()`, page number in data
+- `sepos send_art <phys> [size]` → `sepos_send_art()`
+- `sepos irq` → `sepos_enable_irq()` (writes the `en_int` mask only; no IRQ is bound)
+- `sepos status` → `sepos_status()`, prints `recv_sts`, queue-empty, irq state, statistics
+- `sepos memdump <addr> <len>` → NOT SUPPORTED (requires SEPOS-side cooperation); prints that reason
 
 ### 4.3 Help Text Update
-Replace line 300 with accurate usage including `send_sepos`.
+Done — `sepos <ping|random|boot_tz0|send_sepos|send_art|irq|status|memdump>`.
 
-**STATUS: SHELL WRAPPERS PRESENT; TRANSPORT FAILS CLOSED.** The wrappers
-report that the transport is disabled until the resource base and register
-map are verified. No successful command has been observed on an A11 device.
+**STATUS: COMPLETE — all commands wired; none exercised on hardware.**
+
+Note §4.2 above originally specified `sep_send_command(0xFF, ...)` for ping.
+That opcode was wrong; ping is **1**, and the wrappers call the typed helpers
+rather than composing opcodes by hand. No successful command has been observed
+on an A11 device.
 
 ---
 
@@ -158,7 +196,20 @@ map are verified. No successful command has been observed on an A11 device.
 - `sep_find_sepos_image(slot)` in `sep.c` or `fw_store.c` — returns `(base, size, entry)`
 - `sepos boot_tz0` shell command uses it automatically
 
-**STATUS: ⏳ PENDING** — Basic `sep_boot_tz0()` exists but needs SEPOS image location logic.
+**STATUS: ⏳ PENDING — still the real remaining work, and it is blocked.**
+
+`sep_boot_tz0()` sends opcode 5 with param 0 and data 0, which is what pongoOS
+sends when it has no image to name. Naming an image requires
+`sep_find_sepos_image()`, which requires a firmware slot reader and a SEPOS
+container format — neither of which exists, because both are downstream of the
+two blockers recorded in
+[`../../../docs/T8020_SEPOS_DIAGNOSTIC_FRONTIER_2026-10-10.md`](../../../docs/T8020_SEPOS_DIAGNOSTIC_FRONTIER_2026-10-10.md)
+(the AP readiness predicates, and the SEPOS state before `0x10000550c`).
+
+§5.2 step 3 above is also wrong in its detail: pongoOS sends **no payload** for
+boot_tz0 — `seprom_execute_opcode(5, 0, 0)` — because the integrity tree
+configured immediately before it is what tells SEP where its region is. The
+page-number-in-data form is what opcode **6** (`send_sepos`) uses, not 5.
 
 ---
 
@@ -166,28 +217,39 @@ map are verified. No successful command has been observed on an A11 device.
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Mailbox reachable | `sepos status` | Registers read non-zero |
-| Ping | `sepos ping` | "SEP ping OK" in <10 ms |
+| Mailbox reachable | `sepos status` | `recv_sts` reads non-zero, queue state reported |
+| Ping | `sepos ping` | "SEP ping OK" |
 | Get Random | `sepos random` | 32 hex bytes, different each call |
-| Boot TZ0 (no image) | `sepos boot_tz0` | NAK (no image staged) |
+| Boot TZ0 (no image) | `sepos boot_tz0` | NAK or timeout (no image staged) |
 | Boot TZ0 (with image) | `goat install sepos.g1 --slot 0` then `sepos boot_tz0` | ACK, SEP re-enumerates |
 
-**Gate**: all five rows pass on an A11 device before Phase 5 is complete.
+**Gate: NOT MET.** All five rows require an A11 device and a launched SEPROM.
+Zero of them have been attempted. §5 above explains why the last row cannot be
+reached yet even with hardware in hand.
 
 ---
 
 ## 7. Unit Tests (Host)
 
-- `tests/sep_test.c`: fake MMIO at `0x23C000000`/`0x243000000`
-  - `test_sep_ping_ok()` — mock reply PONG, assert success
-  - `test_sep_ping_timeout()` — no reply, assert timeout error
-  - `test_sep_get_random()` — mock 32-byte reply, verify bytes returned
-  - `test_sep_framing()` — verify 64-bit message composition matches pongoOS
-- Run via `make host-test` (added to `tests/Makefile`)
+Two suites, both under fake MMIO, both in `make sep-test`:
 
-**STATUS: HOST TESTS PASS; SCOPE LIMITED.** Tests cover the fake transport and
-the production no-MMIO guard. They do not validate the Apple protocol or
-hardware behavior.
+- **`tests/sep_test.c`** (18 tests) — the driver against pongoOS. Pins the
+  register set as a *count* as well as by value, the message round-trip, the
+  per-opcode encoding (ping = 1, not 0xFF), the opcode+100 reply convention,
+  the SEPROM panic message, the `recv_sts` bit 17 queue-empty bit, the
+  interrupt mask, and the message framing **against real captured SEP traces**
+  from AsahiLinux's HW:SEP page.
+- **`tests/sepos_wrapper_test.c`** (8 tests) — `src/research/sepos.c`, the
+  layer between the shell and the driver that owns the static driver instance
+  and the init latch. Checks the wrappers route to the right opcodes, that the
+  page number lands in `data`, and that the module resets cleanly between
+  uses. Uses `sepos_test_attach()` so the wrapper's driver points at the fake
+  MMIO instead of the profile's real `0x243000000`.
+
+**STATUS: 18/18 and 8/8 PASS.** Neither suite validates hardware behaviour, and
+neither can: the first checks the protocol against a reference
+implementation, the second checks that the wrappers call the driver correctly.
+The Apple protocol and its behaviour on an A11 remain unvalidated.
 
 ---
 
@@ -244,10 +306,23 @@ make host-test → sep_test passes
 
 ---
 
-## 12. First Code Change
+## 12. Outcome
 
-Create `include/sep.h` with the register map from Section 2.1, then `src/drivers/sep.c` with the driver skeleton. The existing `src/research/sepos.c` becomes a thin wrapper calling `sep_send()` and is eventually removed once the shell uses `sep.c` directly.
+`include/sep.h` and `src/drivers/sep.c` were written with the register map from
+§2.1 — which turned out to be the **wrong** map, being the 32-bit layout. The
+correction to the real pongoOS 64-bit layout, the removal of the fabricated
+reply-doorbell ack, and the tests that pin both are recorded in
+[`../../../docs/A11_SEP_MAILBOX_PROTOCOL_AUDIT_2026-10-10.md`](../../../docs/A11_SEP_MAILBOX_PROTOCOL_AUDIT_2026-10-10.md).
+`src/research/sepos.c` is the thin wrapper §12 intended and the shell uses the
+driver through it.
 
-**STATUS: INCOMPLETE / RESEARCH ONLY.** Source files and fake-MMIO tests
-exist, but the production path is deliberately disabled. Historical hardware
-acceptance criteria below are not met.
+**STATUS: driver COMPLETE and host-tested (18/18 protocol tests, 36/36 SoC
+registry tests). The Phase 5 hardware acceptance is NOT met — no real SEP
+exchange has ever been performed, and the two blockers recorded in
+`docs/T8020_SEPOS_DIAGNOSTIC_FRONTIER_2026-10-10.md` (the AP readiness
+predicates that keep the `0xa4` receive path disabled, and the SEPOS state
+immediately before `0x10000550c`) are upstream of it and unchanged.**
+
+The original §2.1 table is kept above despite being wrong, because it is the
+record of what was proposed before the audit, and a plan whose first draft was
+wrong and says so is more useful than one that quietly shows only the answer.
