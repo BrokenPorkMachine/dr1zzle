@@ -148,6 +148,37 @@ static int decrypt_result;
 static int enter_calls;
 static int report_calls;
 
+/* The install backend. loader.c's is weak, so this strong definition replaces
+ * it and lets the INSTALL verb be tested with no NAND: it records what the
+ * loader decrypted and hands back a result the test chooses. */
+static int install_result;
+static int install_calls;
+static unsigned installed_slot;
+static uint32_t installed_size;
+static uint64_t installed_load_base;
+static uint32_t installed_entry_off;
+static char installed_name[24];
+
+int goatloader_install_hook(unsigned slot, const uint8_t *image, uint32_t size,
+                            uint64_t load_base, uint32_t entry_off,
+                            const char *name) {
+    size_t i = 0;
+    install_calls++;
+    installed_slot = slot;
+    installed_size = size;
+    installed_load_base = load_base;
+    installed_entry_off = entry_off;
+    if (name) {
+        while (name[i] && i + 1u < sizeof installed_name) {
+            installed_name[i] = name[i];
+            i++;
+        }
+    }
+    installed_name[i] = 0;
+    (void)image;
+    return install_result;
+}
+
 int goat_parse(const uint8_t *der, uint32_t len, goat_container_t *out) {
     for (uint32_t i = 0; i < sizeof(*out); i++) ((uint8_t *)out)[i] = 0;
     out->payload_sha = der;      /* aliasing, as the real one does */
@@ -439,6 +470,69 @@ int main(void) {
     check(contains(reply(), "ERR run=no-stage"), 36);
 
     /* Re-stage so the STATUS check below still reports staged=1. */
+    reset_conversation();
+    client_sends("GOAT/1 PUSH 16\n");
+    client_sends_bytes(container, 16);
+    serve();
+
+    /* --- INSTALL: stage -> decrypt -> write to a slot ------------------- */
+
+    /* With no name, the slot label comes from the certificate subject. */
+    install_result = 0;
+    install_calls = 0;
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL 0\n");
+    serve();
+    check(install_calls == 1, 50);
+    check(installed_slot == 0, 51);
+    check(installed_size == 16, 52);
+    check(installed_load_base == (uint64_t)(uintptr_t)stage_window, 53);
+    check(installed_entry_off == 0x1000, 54);
+    check(strcmp(installed_name, "dr1zzle-test") == 0, 55);
+    check(contains(reply(), "GOAT/1 OK install"), 56);
+    check(contains(reply(), "slot=0"), 57);
+    check(contains(reply(), "name=dr1zzle-test"), 58);
+
+    /* An explicit name overrides the subject. */
+    install_calls = 0;
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL 1 monitor\n");
+    serve();
+    check(install_calls == 1, 59);
+    check(installed_slot == 1, 60);
+    check(strcmp(installed_name, "monitor") == 0, 61);
+    check(contains(reply(), "name=monitor"), 62);
+
+    /* A store that refuses (bad block, no controller) is an ordinary error,
+     * not a silent success. */
+    install_result = -1;
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL 0\n");
+    serve();
+    check(contains(reply(), "ERR install=failed"), 63);
+    install_result = 0;
+
+    /* Slot out of range and unparseable slot are rejected before the store. */
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL 99\n");
+    serve();
+    check(contains(reply(), "ERR install=expected-slot"), 64);
+
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL notanumber\n");
+    serve();
+    check(contains(reply(), "ERR install=expected-slot"), 65);
+
+    /* No staged image means nothing to install. */
+    reset_conversation();
+    client_sends("GOAT/1 ABORT\n");
+    serve();
+    reset_conversation();
+    client_sends("GOAT/1 INSTALL 0\n");
+    serve();
+    check(contains(reply(), "ERR install=no-stage"), 66);
+
+    /* Re-stage for the remaining tests. */
     reset_conversation();
     client_sends("GOAT/1 PUSH 16\n");
     client_sends_bytes(container, 16);

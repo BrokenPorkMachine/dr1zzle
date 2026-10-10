@@ -1,8 +1,8 @@
 """libusb transport and the pwndfu (checkm8) command channel.
 
 This is the loader half: it puts bytes into device memory and tells the device
-to run them, with no dependency on the vendored ipwndfu (which is Python 2 and
-cannot be imported from here). The wire format is dfu.py's control-transfer
+to run them, with no dependency on the vendored ipwndfu (which only supplies
+the checkm8 exploit step). The wire format is dfu.py's control-transfer
 sequence plus usbexec.py's command/response framing, both of which are the
 DFU command channel the checkm8 patch installs:
 

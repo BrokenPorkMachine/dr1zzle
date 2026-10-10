@@ -42,6 +42,7 @@ make phase4-test   # host-test AES, APFS, and KBAG primitives
 ## Layout
 
 - `include/` — public, self-contained libc headers
+- `include/soc/` — one per-SoC profile header; see [SoC registry](docs/SOCS.md)
 - `lib/` — freestanding libc implementation
 - `kernel/` — portable monitor entry point and QEMU `virt` console
 - `arch/aarch64/` — AArch64 reset entry and linker script
@@ -52,6 +53,14 @@ make phase4-test   # host-test AES, APFS, and KBAG primitives
 See [hardware profiles](docs/HARDWARE_PROFILES.md) for memory budgets and build
 selection. The root default build targets the separate A11 `src/` tree; use the
 `profiles` targets above for the portable monitor.
+
+Every binding that varies between SoCs — register bases, IRQ lines, NAND
+geometry, the DFU placement bound — lives in one profile under `include/soc/`,
+selected by `make SOC=<name>`. Ten SoCs are checkm8-exploitable, all ten are
+recorded, and one (the A11) has the peripheral map needed to build an image:
+`make SOC=t8010` is refused with a message naming the profile rather than
+failing on a base that was never measured. The registry is checked against the
+two vendored files that define its geometry by `make soc-test`.
 
 `scripts/run-qemu.sh` builds the portable monitor profile for QEMU. Its default
 mode mirrors text to a 640×240 display window while keeping UART input and
@@ -66,6 +75,16 @@ Phase 4 storage/crypto code is now part of the root A11 build: NAND page
 access, APFS metadata/B-tree extent reading, AES-256 known vectors, and bounded
 KBAG parsing. NAND/AES register maps still require A11 silicon verification;
 GID-derived key bytes are intentionally not printed by the shell.
+
+The NAND write path is now part of the same build: an ECC-assisted slot writer
+(`src/core/fw_store.c`) erases a firmware slot's blocks, programs every page
+with the controller's ECC engine enabled, and reads every page back and
+compares it before reporting success. It is reachable three ways — `goat
+install <container> --slot N` from the host, `fw install <n>` at the core menu
+(writes the staged container), and `fw save <n>` in the firmware shell
+(writes the running image) — and the on-screen menu and `clear` redraw live in
+[docs/MENU.md](docs/MENU.md). `nand erase|write|verify` are the raw bring-up
+primitives underneath it.
 
 The core peripheral layer is now complete as well: PMGR clocks/resets, GPIO
 pinmux, a polling I2C master, a polling SPI master, the watchdog (disarmed at
@@ -84,7 +103,8 @@ build/a11-payload.elf`) is the login prompt: it brings up the console, NAND,
 USB and the goatloader, then offers a menu. The **firmware**
 (`build/firmware/dr1zzle.elf`/`.bin`) is the full monitor shell; it is laid
 down on demand (`make deploy-firmware KEY_HEX=<hex>` seals it and pushes it
-with `--run`, or the core menu loads a NAND slot with `run <n>`). The split
+with `--run`; `goat install <container> --slot N` seals it into a NAND slot;
+the core menu loads a slot with `run <n>`). The split
 exists because the old single flat image outgrew the pwndfu command window —
 see [the multi-stage design](docs/MULTISTAGE_DESIGN.md) for the layout, the
 placement rule, and the firmware format. See [docs/GOAT.md](docs/GOAT.md)
@@ -134,6 +154,7 @@ connection needs no setup:
 ```sh
 python3 goat/cli.py push payload.g1 --key-hex ...           # stage a sealed container
 python3 goat/cli.py push payload.g1 --key-hex ... --run     # stage and hand over
+python3 goat/cli.py install payload.g1 --slot 1 --key-hex ...  # seal into a NAND slot
 python3 goat/cli.py shell                                   # monitor console over TCP
 ```
 

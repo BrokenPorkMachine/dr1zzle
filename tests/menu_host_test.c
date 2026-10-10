@@ -90,20 +90,32 @@ static int row_has_ink(uint32_t y, uint32_t x0, uint32_t x1, uint32_t bg) {
     return 0;
 }
 
-/* Layout for a 640x240 panel (30 text rows), which is what the double
- * provides. menu.c puts the separator under the panel at row 10, the pane at
- * rows 11..27 (17 rows), the status separator at row 28 and the status line
- * at row 29. */
+/* Layout constants the checks compare against. The vertical geometry -- where
+ * the pane starts and ends -- is derived in main() from the menu's own panel
+ * height (menu_panel_rows()) and the framebuffer height, so adding a line to
+ * the panel summary does not invalidate the test:
+ *
+ *   row 0 .. menu_panel_rows()   panel + its separator
+ *   next row .. rows-3           the output pane
+ *   rows-2                       status separator
+ *   rows-1                       pinned status line
+ */
 #define PANEL_BG    0xff0a0a12u
 #define PANE_BG     0xff000000u
 #define SEP_FG      0xff333a52u
 #define STATUS_BG   0xff0e111cu
-#define PANE_TOP_Y  (11u * 8u)  /* 88  */
-#define PANE_LAST_Y (27u * 8u)  /* 216 */
-#define STATUS_SEP_Y (28u * 8u) /* 224 */
-#define STATUS_Y    (29u * 8u)  /* 232 */
 
 int main(void) {
+    /* Derived vertical geometry for the 640x240 (30-row) double. */
+    uint32_t total_rows = FB_H / 8u;
+    uint32_t pane_top_row = menu_panel_rows() + 1u;
+    uint32_t status_sep_row = total_rows - 2u;
+    uint32_t pane_rows = status_sep_row - pane_top_row;
+    uint32_t PANE_TOP_Y = pane_top_row * 8u;
+    uint32_t PANE_LAST_Y = (status_sep_row - 1u) * 8u;
+    uint32_t STATUS_SEP_Y = status_sep_row * 8u;
+    uint32_t STATUS_Y = (total_rows - 1u) * 8u;
+
     printf("menu host tests\n");
 
     fb_double(FB_W, FB_H);
@@ -142,7 +154,7 @@ int main(void) {
     menu_redraw();
     menu_exec_begin();
     uart_mirror_hook('A');                 /* lands on pane row 0 */
-    for (int i = 0; i < 17; i++) uart_mirror_hook('\n');
+    for (uint32_t i = 0; i < pane_rows; i++) uart_mirror_hook('\n');
     uart_mirror_hook('X');
     menu_exec_end();
     check(!row_has_ink(PANE_TOP_Y, 0, 6, PANE_BG), "old pane row scrolled away");

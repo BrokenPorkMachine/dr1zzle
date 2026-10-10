@@ -32,9 +32,9 @@ static int recfg_soc_r32(void *a, uint64_t *addr, uint32_t *mask, uint32_t *data
     uint32_t msk = *mask;
 
     // Patch AES read for A11
-    if (arg->patchedAES && ad == 0x2352D0000ULL && (msk & 0x7) != 0) {
+    if (arg->patchedAES && ad == SOC_RECFG_AES_ADDR && (msk & 0x7) != 0) {
         uart_puts("Patching Recfg AES read\n");
-        *data = (*data & ~0x7) | (mmio_read32(0x2352D0000ULL) & 0x7 & msk);
+        *data = (*data & ~0x7) | (mmio_read32(SOC_RECFG_AES_ADDR) & 0x7 & msk);
         return kRecfgUpdate;
     }
     return kRecfgSuccess;
@@ -44,9 +44,9 @@ static int recfg_soc_w32(void *a, uint64_t *addr, uint32_t *data)
 {
     cb_arg_t *arg = a;
     uint64_t ad = *addr;
-    if (ad == 0x2352D0000ULL) {
+    if (ad == SOC_RECFG_AES_ADDR) {
         uart_puts("Patching Recfg AES write\n");
-        *data = mmio_read32(0x2352D0000ULL) & 0x7;
+        *data = mmio_read32(SOC_RECFG_AES_ADDR) & 0x7;
         arg->patchedAES = true;
         return kRecfgUpdate;
     }
@@ -62,8 +62,8 @@ static int recfg_soc_r64(void *a, uint64_t *addr, uint64_t *mask, uint64_t *data
 
     // IORVBAR addresses for A11
     static const uint64_t iorvbar_addrs[] = {
-        0x208450000, 0x208550000, 0x208050000,
-        0x208150000, 0x208250000, 0x208350000, 0
+        SOC_IORVBAR_0, SOC_IORVBAR_1, SOC_IORVBAR_2,
+        SOC_IORVBAR_3, SOC_IORVBAR_4, SOC_IORVBAR_5, 0
     };
 
     for (const uint64_t *ptr = iorvbar_addrs; *ptr != 0; ++ptr) {
@@ -84,8 +84,8 @@ static int recfg_soc_w64(void *a, uint64_t *addr, uint64_t *data)
     uint64_t ad = *addr;
 
     static const uint64_t iorvbar_addrs[] = {
-        0x208450000, 0x208550000, 0x208050000,
-        0x208150000, 0x208250000, 0x208350000, 0
+        SOC_IORVBAR_0, SOC_IORVBAR_1, SOC_IORVBAR_2,
+        SOC_IORVBAR_3, SOC_IORVBAR_4, SOC_IORVBAR_5, 0
     };
 
     for (const uint64_t *ptr = iorvbar_addrs; *ptr != 0; ++ptr) {
@@ -120,9 +120,8 @@ static uint64_t recfg_map(uint64_t seq_base, uint64_t seq_size)
 
 static void get_sram_bounds(uint64_t *sram_base, uint64_t *sram_end)
 {
-    // For A11, recfg is in SRAM at 0x235F00000 - 0x235F10000
-    *sram_base = 0x235F00000ULL;
-    *sram_end = 0x235F10000ULL;
+    *sram_base = SOC_RECFG_SRAM_BASE;
+    *sram_end = SOC_RECFG_SRAM_END;
 }
 
 void recfg_soc_sync(void)
@@ -139,8 +138,7 @@ void recfg_soc_sync(void)
     get_sram_bounds(&sram_base, &sram_end);
 
     // Recfg config table is at SRAM base + offset from aop_cfg_table
-    // For A11, aop_cfg_table is at 0x2352C0200
-    uint64_t cfg_base = 0x2352C0200ULL;
+    uint64_t cfg_base = SOC_AOP_CFG_TABLE;
     volatile uint32_t *table = (volatile uint32_t*)cfg_base;
 
     cb_arg_t arg = {};
@@ -210,13 +208,11 @@ void recfg_soc_lock(void)
     if (max % 0x40 == 0) max -= 0x40;
 
     // Write lock registers
-    // aop_sram_lock_range at 0x235000200
-    // aop_sram_lock_set at 0x235000204
-    // aop_cfg_lock at 0x2352C0214
+    // aop_sram_lock_range / aop_sram_lock_set / aop_cfg_lock
     uint32_t lock_val = ((((max - sram_base) >> 6) & 0x7FFF) << 16) | (((min - sram_base) >> 6) & 0x7FFF);
-    mmio_write32(0x235000200ULL, lock_val);
-    mmio_write32(0x235000204ULL, 1);
-    mmio_write32(0x2352C0214ULL, 1);
+    mmio_write32(SOC_AOP_SRAM_LOCK_RANGE, lock_val);
+    mmio_write32(SOC_AOP_SRAM_LOCK_SET, 1);
+    mmio_write32(SOC_AOP_CFG_LOCK, 1);
     __asm__ volatile("dsb sy");
     uart_puts("Recfg locked\n");
     recfg_locked = true;
@@ -303,11 +299,11 @@ static void recfg_cmd_dump(const char *cmd, char *args)
     (void)cmd; (void)args;
     uint64_t sram_base, sram_end;
     get_sram_bounds(&sram_base, &sram_end);
-    uint64_t cfg_base = 0x2352C0200ULL;
+    uint64_t cfg_base = SOC_AOP_CFG_TABLE;
     volatile uint32_t *table = (volatile uint32_t*)cfg_base;
-    bool sram_locked = mmio_read32(0x235000204ULL) != 0;
-    bool cfg_locked = mmio_read32(0x2352C0214ULL) != 0;
-    uint32_t lock_val = mmio_read32(0x235000200ULL);
+    bool sram_locked = mmio_read32(SOC_AOP_SRAM_LOCK_SET) != 0;
+    bool cfg_locked = mmio_read32(SOC_AOP_CFG_LOCK) != 0;
+    uint32_t lock_val = mmio_read32(SOC_AOP_SRAM_LOCK_RANGE);
     uint64_t lock_from = sram_base + ((lock_val & 0xFFFF) << 6);
     uint64_t lock_to = sram_base + (((lock_val >> 16) & 0xFFFF) << 6) + 0x40;
 

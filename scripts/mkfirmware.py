@@ -64,9 +64,11 @@ def make_record(image, load_base, entry_off, name):
         raise SystemExit("error: entry offset is outside the image")
     if load_base > 0xFFFF_FFFF_FFFF_FFFF:
         raise SystemExit("error: load base does not fit the header field")
-    if not 1 <= len(name) <= 16:
-        raise SystemExit("error: --name must be 1..16 characters")
-    name = name[:16]
+    if not 1 <= len(name) <= 15:
+        raise SystemExit(
+            "error: --name must be 1..15 characters (the header's 16-byte "
+            "field is NUL-padded, so the last byte must be a terminator)")
+    name = name[:15]
     header = HEADER.pack(FW_MAGIC, FW_VERSION, 0, load_base, entry_off,
                          len(image), zlib.crc32(image) & 0xFFFFFFFF,
                          name.encode("ascii").ljust(16, b"\x00"))
@@ -85,7 +87,7 @@ def main():
                     help="entry point as an offset from --load-base "
                          "(default: derived from --elf)")
     ap.add_argument("--name", default="dr1zzle",
-                    help="16-char label stored in the header (default dr1zzle)")
+                    help="label stored in the header (NUL-padded, up to 15 chars)")
     ap.add_argument("--out", default="firmware.fw", help="output record file")
     args = ap.parse_args()
 

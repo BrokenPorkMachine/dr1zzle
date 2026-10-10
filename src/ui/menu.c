@@ -51,7 +51,8 @@
 static const char *const MENU_LINES[] = {
     "dump    securerom sepos iboot llb nand nor ace2",
     "        UID GID sram dram baseband keybag + reg (dump list)",
-    "nand    id info bad read dump export   (read-only)",
+    "nand    id info bad read dump export | erase write verify",
+    "fw      list save install   (write firmware to a NAND slot)",
     "sep     ping random boot_tz0 status memdump",
     "wifi    scan select connect disconnect status",
     "aes     cbc|ecb enc|dec 128|192|256 uid|gid0|gid1",
@@ -186,6 +187,10 @@ void menu_output_clear(void) {
 
 int menu_active(void) {
     return menu_up;
+}
+
+uint32_t menu_panel_rows(void) {
+    return (uint32_t)PANEL_END;
 }
 
 void menu_redraw(void) {

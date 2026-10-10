@@ -1,10 +1,10 @@
-/* A11 NAND controller.
+/* NAND controller.
  *
  * The command protocol is intentionally kept behind this file.  The address
  * window is not emulated by QEMU, so every public operation validates the
- * controller state and geometry before it touches a page.  The geometry is
- * a conservative 4 KiB/128-byte-OOB profile until the device ID table has
- * been checked against an actual board.
+ * controller state and geometry before it touches a page.  The geometry
+ * defaults come from the SoC profile and is confirmed against the device ID
+ * table at init before any real page is touched.
  */
 
 #include "nand.h"
@@ -34,6 +34,13 @@
 #define NAND_CMD_READSTART     0x30u
 #define NAND_CMD_READID        0x90u
 #define NAND_CMD_RESET         0xffu
+#define NAND_CMD_ERASE1        0x60u
+#define NAND_CMD_ERASE2        0xD0u
+#define NAND_CMD_PROGRAM       0x80u
+#define NAND_CMD_PROGRAM_EXEC  0x10u
+#define NAND_CMD_STATUS        0x70u
+
+#define NAND_STATUS_FAIL       0x01u
 
 #define NAND_TIMEOUT_US        100000u
 #define NAND_ECC_STEP          512u
@@ -97,6 +104,59 @@ static void nfc_read_words(uint8_t *out, uint32_t length) {
             word >>= 8;
         }
     }
+}
+
+/* The FIFO is a 32-bit register, so a transfer is issued as whole words. The
+ * real geometry (4096-byte pages, 128-byte spare) is word-multiple; a trailing
+ * partial word is zero-padded on program just as the read side ignores the
+ * bytes past `length`. */
+static void nfc_write_words(const uint8_t *in, uint32_t length, uint8_t pad) {
+    uint32_t offset = 0;
+    while (offset + 4u <= length) {
+        uint32_t word = (uint32_t)in[offset] |
+                        ((uint32_t)in[offset + 1] << 8) |
+                        ((uint32_t)in[offset + 2] << 16) |
+                        ((uint32_t)in[offset + 3] << 24);
+        nfc_write(NFC_DATA, word);
+        offset += 4u;
+    }
+    if (offset < length) {
+        uint32_t word = 0;
+        int shift = 0;
+        while (offset < length) {
+            word |= (uint32_t)in[offset++] << shift;
+            shift += 8;
+        }
+        while (shift < 32) {
+            word |= (uint32_t)pad << shift;
+            shift += 8;
+        }
+        nfc_write(NFC_DATA, word);
+    }
+}
+
+static void nfc_write_fill(uint8_t value, uint32_t length) {
+    uint32_t word = (uint32_t)value * 0x01010101u;
+    uint32_t offset = 0;
+    while (offset + 4u <= length) {
+        nfc_write(NFC_DATA, word);
+        offset += 4u;
+    }
+    if (offset < length) nfc_write(NFC_DATA, word);
+}
+
+/* The part's own status byte, latched by command 0x70. Bit 0 is FAIL for both
+ * ERASE and PROGRAM on the parts this driver targets. */
+static int nfc_status_failed(void) {
+    nfc_write(NFC_CMD, NAND_CMD_STATUS);
+    return (nfc_read(NFC_DATA) & NAND_STATUS_FAIL) != 0u;
+}
+
+static int bytes_same(const uint8_t *a, const uint8_t *b, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) {
+        if (a[i] != b[i]) return 0;
+    }
+    return 1;
 }
 
 int nand_read_id(uint8_t *id, uint32_t capacity, uint32_t *length) {
@@ -184,6 +244,85 @@ int nand_read_page(uint32_t block, uint32_t page, uint8_t *data, uint8_t *oob) {
         return -4;
     }
     (void)total;
+    return 0;
+}
+
+/* --- write path --------------------------------------------------------- */
+
+int nand_erase_block(uint32_t block) {
+    if (!g_nand.initialized || !g_nand.verified ||
+        block >= g_nand.geometry.block_count) {
+        return -1;
+    }
+
+    uint64_t row64 = (uint64_t)block * g_nand.geometry.pages_per_block;
+    if (row64 > 0xffffffffULL) return -2;
+
+    /* The block erase sequence shares the packed row/column address register
+     * with the read path: ERASE1 latches the row, ERASE2 commits it. */
+    nfc_write(NFC_CMD, NAND_CMD_ERASE1);
+    nfc_write(NFC_ADDR, (uint32_t)row64);
+    nfc_write(NFC_CMD, NAND_CMD_ERASE2);
+    if (nfc_wait_ready() != 0) {
+        g_nand.write.write_failed++;
+        return -3;
+    }
+    if (nfc_status_failed()) {
+        g_nand.write.write_failed++;
+        return -4;
+    }
+    g_nand.write.erased++;
+    return 0;
+}
+
+int nand_write_page(uint32_t block, uint32_t page, const uint8_t *data,
+                    const uint8_t *oob) {
+    if (!data || !nand_valid_page(block, page)) return -1;
+
+    uint64_t row64 = (uint64_t)block * g_nand.geometry.pages_per_block + page;
+    if (row64 > 0xffffffffULL) return -2;
+
+    nfc_write(NFC_CMD, NAND_CMD_PROGRAM);
+    nfc_write(NFC_ADDR, 0);                  /* column */
+    nfc_write(NFC_ADDR, (uint32_t)row64);    /* row */
+    nfc_write_words(data, g_nand.geometry.page_size, 0x00);
+    if (oob) {
+        nfc_write_words(oob, g_nand.geometry.oob_size, 0xff);
+    } else {
+        /* 0xFF is the erased value, so the ECC engine's parity bytes stand out
+         * against the rest of the spare area and a readback that skipped the
+         * engine is visibly wrong rather than plausible. */
+        nfc_write_fill(0xffu, g_nand.geometry.oob_size);
+    }
+    nfc_write(NFC_CMD, NAND_CMD_PROGRAM_EXEC);
+    if (nfc_wait_ready() != 0) {
+        g_nand.write.write_failed++;
+        return -3;
+    }
+    if (nfc_status_failed()) {
+        g_nand.write.write_failed++;
+        return -4;
+    }
+    g_nand.write.programmed++;
+    return 0;
+}
+
+int nand_verify_page(uint32_t block, uint32_t page, const uint8_t *data,
+                     const uint8_t *oob) {
+    if (!data || !nand_valid_page(block, page)) return -1;
+
+    if (nand_read_page(block, page, g_page, g_oob) != 0) {
+        g_nand.write.verify_failed++;
+        return -2;
+    }
+    if (!bytes_same(g_page, data, g_nand.geometry.page_size)) {
+        g_nand.write.verify_failed++;
+        return -1;
+    }
+    if (oob && !bytes_same(g_oob, oob, g_nand.geometry.oob_size)) {
+        g_nand.write.verify_failed++;
+        return -1;
+    }
     return 0;
 }
 

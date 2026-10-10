@@ -11,6 +11,8 @@
 #include "nand_dump.h"
 #include "nand.h"
 #include "nand_export.h"
+#include "firmware.h"
+#include "fw_store.h"
 #include "dashboard.h"
 #include "memory_dump.h"
 #include "iboot_dump.h"
@@ -37,7 +39,23 @@ extern vfs_asset_t g_assets[32];
 extern uint32_t g_asset_count;
 extern size_t g_asset_cache_size;
 
+/* The firmware image's own extent, from the linker (linker/firmware.ld): the
+ * bytes from FW_LOAD_BASE to __firmware_image_end are exactly what `goat seal`
+ * wrapped, so `fw save` can write the running build back to NAND. */
+extern char __firmware_image_end[];
+extern void _start(void);
+
 #define MAX_LINE 256
+
+/* One reusable page + spare buffer for the NAND bring-up commands. A page can
+ * be 16 KB, so this lives in .bss rather than on the firmware's 16 KB stack. */
+static uint8_t g_nand_page[NAND_MAX_PAGE_BYTES];
+static uint8_t g_nand_oob[NAND_MAX_OOB_BYTES];
+
+/* The firmware's own load image: [FW_LOAD_BASE, __firmware_image_end) is exactly
+ * what `goat seal` wrapped, which is what `fw install` writes back. */
+extern char __firmware_image_end[];
+extern void _start(void);
 
 /* Case-insensitive string compare, for target names typed by hand:
  * `dump UID` and `dump uid` have to mean the same thing. */
@@ -265,6 +283,8 @@ static void execute(char *line) {
 
         uart_puts("\n  storage / crypto\n");
         uart_puts("    nand <id|info|bad|read|dump|export> - NAND controller and pages\n");
+        uart_puts("    nand erase <blk> | write <blk> <pg> <byte> | verify <blk> <pg> <byte>\n");
+        uart_puts("    fw <list|save|install> <slot> [name] - write firmware to NAND\n");
         uart_puts("    apfs scan                   - locate APFS container and volume\n");
         uart_puts("    aes <cbc|ecb> <enc|dec> <128|192|256> <uid|gid0|gid1|iv+key> <data>\n");
         uart_puts("    keybag <img4_file>          - decrypt KBAG\n");
@@ -726,7 +746,8 @@ static void execute(char *line) {
     }
     else if (strcmp(argv[0], "nand") == 0) {
         if (argc < 2) {
-            uart_puts("Usage: nand <id|info|bad <block>|read <block> <page>|dump <first> <last>\n");
+            uart_puts("Usage: nand <id|info|bad <blk>|read <blk> <pg>|dump <first> <last>\n");
+            uart_puts("            nand erase <blk> | write <blk> <pg> <byte> | verify <blk> <pg> <byte>\n");
             return;
         }
         if (strcmp(argv[1], "id") == 0 || strcmp(argv[1], "info") == 0) {
@@ -744,6 +765,15 @@ static void execute(char *line) {
             uart_puts(" oob="); uart_puts(utoa(info->geometry.oob_size));
             uart_puts(" blocks="); uart_puts(utoa(info->geometry.block_count));
             uart_puts("\n");
+            uart_puts("nand: ecc corrected="); uart_puts(utoa(info->ecc.corrected));
+            uart_puts(" failed="); uart_puts(utoa(info->ecc.failed));
+            uart_puts(" uncorrectable="); uart_puts(utoa(info->ecc.uncorrectable));
+            uart_puts("\n");
+            uart_puts("nand: write erased="); uart_puts(utoa(info->write.erased));
+            uart_puts(" programmed="); uart_puts(utoa(info->write.programmed));
+            uart_puts(" failed="); uart_puts(utoa(info->write.write_failed));
+            uart_puts(" verify-failed="); uart_puts(utoa(info->write.verify_failed));
+            uart_puts("\n");
         } else if (strcmp(argv[1], "bad") == 0) {
             if (argc < 3) { uart_puts("Usage: nand bad <block>\n"); return; }
             if (nand_init() != 0) { uart_puts("nand: unavailable\n"); return; }
@@ -753,12 +783,57 @@ static void execute(char *line) {
         } else if (strcmp(argv[1], "read") == 0) {
             if (argc < 4) { uart_puts("Usage: nand read <block> <page>\n"); return; }
             if (nand_init() != 0) { uart_puts("nand: unavailable\n"); return; }
-            static uint8_t data[NAND_MAX_PAGE_BYTES];
-            static uint8_t oob[NAND_MAX_OOB_BYTES];
             int rc = nand_read_page((uint32_t)parse_hex(argv[2]),
-                                    (uint32_t)parse_hex(argv[3]), data, oob);
+                                    (uint32_t)parse_hex(argv[3]),
+                                    g_nand_page, g_nand_oob);
             uart_puts(rc == 0 ? "nand: page read OK; raw bytes withheld from UART\n"
                               : "nand: page read failed\n");
+        } else if (strcmp(argv[1], "erase") == 0) {
+            /* Low-level bring-up: prove a block erases before trusting the
+             * slot writer. Destructive by construction; the block is named. */
+            if (argc < 3) { uart_puts("Usage: nand erase <block>\n"); return; }
+            if (nand_init() != 0) { uart_puts("nand: unavailable\n"); return; }
+            uint32_t block = (uint32_t)parse_hex(argv[2]);
+            int rc = nand_erase_block(block);
+            if (rc == 0) {
+                uart_puts("nand: erased block "); uart_puts(utoa(block)); uart_putc('\n');
+            } else {
+                uart_puts("nand erase: failed rc="); uart_puts(utoa((uint64_t)(int64_t)rc));
+                uart_putc('\n');
+            }
+        } else if (strcmp(argv[1], "write") == 0 ||
+                   strcmp(argv[1], "verify") == 0) {
+            /* Fill a whole page with one byte and program (write) or read back
+             * and compare (verify). A single-byte pattern is enough to catch a
+             * stuck line or a bad plane without shipping a whole page of hex
+             * down a 115200 link. */
+            int writing = (argv[1][0] == 'w');
+            if (argc < 5) {
+                uart_puts(writing ? "Usage: nand write <block> <page> <byte>\n"
+                                 : "Usage: nand verify <block> <page> <byte>\n");
+                return;
+            }
+            if (nand_init() != 0) { uart_puts("nand: unavailable\n"); return; }
+            const nand_info_t *info = nand_info();
+            uint32_t block = (uint32_t)parse_hex(argv[2]);
+            uint32_t page = (uint32_t)parse_hex(argv[3]);
+            uint8_t fill = (uint8_t)parse_hex(argv[4]);
+            memset(g_nand_page, fill, info->geometry.page_size);
+            int rc;
+            if (writing) {
+                rc = nand_write_page(block, page, g_nand_page, 0);
+                if (rc == 0) rc = nand_verify_page(block, page, g_nand_page, 0);
+                uart_puts(rc == 0 ? "nand: page programmed and read back OK\n"
+                                  : "nand: page program/verify FAILED\n");
+            } else {
+                rc = nand_verify_page(block, page, g_nand_page, 0);
+                uart_puts(rc == 0 ? "nand: page matches\n" : "nand: page differs\n");
+            }
+            if (rc != 0) {
+                uart_puts("nand: rc=");
+                uart_puts(utoa((uint64_t)(int64_t)rc));
+                uart_putc('\n');
+            }
         } else if (strcmp(argv[1], "dump") == 0) {
             if (argc < 4) { uart_puts("Usage: nand dump <first-block> <last-block>\n"); return; }
             dump_nand_range((uint32_t)parse_hex(argv[2]),
@@ -785,6 +860,96 @@ static void execute(char *line) {
             return;
         }
         extract_apfs_files();
+    }
+    else if (strcmp(argv[0], "fw") == 0) {
+        /* Two directions onto NAND, one writer (src/core/fw_store.c):
+         *   save     -- write the running firmware image to a slot
+         *   install  -- write the staged goat container to a slot
+         * The core's `fw install` is the same as install here; only the
+         * firmware can `save`, because only the firmware is the image being
+         * saved. */
+        if (argc < 2) {
+            uart_puts("Usage: fw <list|save <slot> [name]|install <slot> [name]>\n");
+            uart_puts("  list     firmware slots on NAND\n");
+            uart_puts("  save     write this running firmware into a slot\n");
+            uart_puts("  install  write the staged goat container into a slot\n");
+            return;
+        }
+        if (strcmp(argv[1], "list") == 0) {
+            fw_store_scan();
+            if (fw_store_count() == 0) { uart_puts("fw: no slots on NAND\n"); return; }
+            for (unsigned s = 0; s < FW_SLOT_COUNT; s++) {
+                const firmware_header_t *h = fw_store_slot(s);
+                if (!h) continue;
+                uart_puts("fw: [");
+                uart_puts(utoa(s));
+                uart_puts("] ");
+                for (unsigned i = 0; i < 16u && h->name[i]; i++) uart_putc(h->name[i]);
+                uart_puts(" size=");
+                uart_puts(utoa(h->size));
+                uart_puts(" base=0x");
+                uart_puts(utoa_hex(h->load_base));
+                uart_puts("\n");
+            }
+        } else if (strcmp(argv[1], "save") == 0) {
+            /* Self-install: the bytes are this image's own
+             * [FW_LOAD_BASE, __firmware_image_end), which the linker makes
+             * exactly the .bin the build produced. */
+            if (argc < 3) { uart_puts("Usage: fw save <slot> [name]\n"); return; }
+            if (nand_init() != 0) { uart_puts("fw: NAND unavailable\n"); return; }
+            uint32_t slot = (uint32_t)parse_hex(argv[2]);
+            if (slot >= FW_SLOT_COUNT) { uart_puts("fw: slot out of range\n"); return; }
+            const char *name = argc >= 4 ? argv[3] : "dr1zzle";
+            uint32_t size = (uint32_t)((uintptr_t)__firmware_image_end -
+                                       (uintptr_t)FW_LOAD_BASE);
+            uint32_t entry_off = (uint32_t)((uintptr_t)&_start -
+                                            (uintptr_t)FW_LOAD_BASE);
+            uart_puts("fw: writing ");
+            uart_puts(utoa(size));
+            uart_puts(" bytes to slot ");
+            uart_puts(utoa(slot));
+            uart_puts("; erase + program + readback\n");
+            int rc = fw_store_install(slot,
+                                      (const uint8_t *)(uintptr_t)FW_LOAD_BASE,
+                                      size, FW_LOAD_BASE, entry_off, name);
+            if (rc == 0) {
+                uart_puts("fw: slot ");
+                uart_puts(utoa(slot));
+                uart_puts(" saved; the core can `run ");
+                uart_puts(utoa(slot));
+                uart_puts("`\n");
+            } else {
+                uart_puts("fw: save failed rc=");
+                uart_puts(utoa((uint64_t)(int64_t)rc));
+                uart_putc('\n');
+            }
+        } else if (strcmp(argv[1], "install") == 0) {
+            /* Staged-container install, like the core menu and `goat install`.
+             * A firmware normally has nothing staged (the core owns the
+             * listener), so this reports no-stage unless the operator staged
+             * something first. */
+            if (argc < 3) { uart_puts("Usage: fw install <slot> [name]\n"); return; }
+            uint32_t slot = (uint32_t)parse_hex(argv[2]);
+            if (slot >= FW_SLOT_COUNT) { uart_puts("fw: slot out of range\n"); return; }
+            int rc = goatloader_install((unsigned)slot, argc >= 4 ? argv[3] : 0);
+            if (rc == 0) {
+                uart_puts("fw: installed to slot ");
+                uart_puts(utoa(slot));
+                uart_putc('\n');
+            } else if (rc == -1) {
+                uart_puts("fw: no key staged -- `goat push` first\n");
+            } else if (rc == -2) {
+                uart_puts("fw: no image staged -- `goat push` first\n");
+            } else if (rc == -3) {
+                uart_puts("fw: staged container failed verification\n");
+            } else if (rc == -4) {
+                uart_puts("fw: decryption failed\n");
+            } else {
+                uart_puts("fw: NAND write failed (bad block or no controller?)\n");
+            }
+        } else {
+            uart_puts("Usage: fw <list|save <slot> [name]|install <slot> [name]>\n");
+        }
     }
     else if (strcmp(argv[0], "ace2") == 0) {
         if (argc < 2) { uart_puts("Usage: ace2 <init|dump|port>\n"); return; }

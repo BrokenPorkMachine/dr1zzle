@@ -10,6 +10,7 @@ clobbers x20-x27, a translation table that maps nothing) are invisible in a
 successful compile.
 """
 
+import os
 import re
 import struct
 import subprocess
@@ -613,11 +614,16 @@ class TestPeripheralDrivers(unittest.TestCase):
         ungate = src.split("void pmgr_ungate")[1].split("}")[0]
         self.assertIn("if (clocks == 0) return;", ungate)
 
-    def test_usb_irq_line_is_named(self):
-        """The DWC2 line number is device-tree information; it is quoted
-        from pongoOS's t8015 platform value and kept in one place."""
-        src = open("include/usb.h").read()
-        self.assertIn("#define AIC_IRQ_USB_OTG 324", src)
+    def test_usb_irq_line_comes_from_the_soc_profile(self):
+        """The DWC2 line number is device-tree information, so it belongs to
+        the selected SoC profile -- not hardcoded in the USB header. A wrong
+        line costs an unclaimed IRQ, not a crash."""
+        usb = open("include/usb.h").read()
+        profile = open("include/soc/t8015.h").read()
+        self.assertIn("#define AIC_IRQ_USB_OTG SOC_IRQ_USB_OTG", usb,
+                      "usb.h should take the IRQ line from the SoC profile")
+        self.assertIn("#define SOC_T8015_IRQ_USB_OTG 324u", profile,
+                      "the t8015 profile should carry the A11 otg_irq line")
 
 
 class TestBringupOrder(unittest.TestCase):
@@ -678,6 +684,120 @@ class TestBringupOrder(unittest.TestCase):
         device = re.search(r"#define GOATLOADER_PORT (\d+)u", header).group(1)
         host = re.search(r"GOATLOADER_PORT = (\d+)", cli).group(1)
         self.assertEqual(device, host)
+
+
+class TestNandWriter(unittest.TestCase):
+    """Static checks on the NAND write path.
+
+    You cannot run this on a Mac: an erase or a program either works or turns
+    a block into a brick, and the difference is whether the ONFI command bytes
+    and the ready/status polls are right. A successful compile proves none of
+    that, so the sequences are asserted here.
+    """
+
+    def setUp(self):
+        self.src = open("src/drivers/nand.c").read()
+        self.hdr = open("include/nand.h").read()
+
+    def _fn(self, signature):
+        """Return the body of the function whose definition contains
+        `signature`, brace-balanced, so a call can be attributed to the right
+        function even when several share it."""
+        start = self.src.index(signature)
+        i = self.src.index("{", start)
+        depth = 0
+        for j in range(i, len(self.src)):
+            if self.src[j] == "{":
+                depth += 1
+            elif self.src[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    return self.src[start:j + 1]
+        self.fail(f"unbalanced braces after {signature}")
+
+    def test_erase_uses_the_onfi_command_pair(self):
+        self.assertRegex(self.src, r"NAND_CMD_ERASE1\s+0x60u")
+        self.assertRegex(self.src, r"NAND_CMD_ERASE2\s+0xD0u")
+
+    def test_program_uses_the_onfi_command_pair(self):
+        self.assertRegex(self.src, r"NAND_CMD_PROGRAM\s+0x80u")
+        self.assertRegex(self.src, r"NAND_CMD_PROGRAM_EXEC\s+0x10u")
+
+    def test_status_poll_uses_0x70_and_the_fail_bit(self):
+        self.assertRegex(self.src, r"NAND_CMD_STATUS\s+0x70u")
+        self.assertRegex(self.src, r"NAND_STATUS_FAIL\s+0x01u")
+
+    def test_erase_polls_ready_and_status(self):
+        body = self._fn("nand_erase_block(")
+        self.assertIn("nfc_wait_ready()", body, "erase never waits for the array")
+        self.assertIn("nfc_status_failed()", body, "erase ignores the status bit")
+
+    def test_program_polls_ready_and_status(self):
+        body = self._fn("nand_write_page(")
+        self.assertIn("nfc_wait_ready()", body, "program never waits for the array")
+        self.assertIn("nfc_status_failed()", body, "program ignores the status bit")
+
+    def test_verify_reads_back_through_the_ecc_engine(self):
+        """Verification must go through nand_read_page, not a raw replay of the
+        write: the controller's ECC has to be in the path for the readback to
+        mean the page decoded correctly."""
+        body = self._fn("nand_verify_page(")
+        self.assertIn("nand_read_page", body)
+        self.assertIn("bytes_same", body)
+
+    def test_write_path_is_declared(self):
+        self.assertIn("int nand_erase_block(uint32_t block);", self.hdr)
+        self.assertIn("int nand_write_page(", self.hdr)
+        self.assertIn("int nand_verify_page(", self.hdr)
+
+    def test_write_counters_are_public(self):
+        self.assertIn("nand_write_stats_t", self.hdr)
+        self.assertIn("nand_write_stats_t write;", self.hdr)
+
+    def test_core_exports_the_write_path(self):
+        for sym in ("nand_erase_block", "nand_write_page", "nand_verify_page"):
+            self.assertIn(sym, PAYLOAD.nm, f"{sym} missing from the core image")
+
+
+class TestFirmwareImage(unittest.TestCase):
+    """The firmware can write itself to a NAND slot (`fw install`), so the
+    extent the linker hands it -- `__firmware_image_end` -- has to be exactly
+    the .bin the build produced. If they drift the copy on flash is truncated
+    or padded, and nothing on the device would notice until the next boot."""
+
+    def setUp(self):
+        self.elf = Path("build/firmware/dr1zzle.elf")
+        self.bin = Path("build/firmware/dr1zzle.bin")
+        if not self.elf.exists() or not self.bin.exists():
+            self.skipTest("firmware not built; run make firmware first")
+        out = subprocess.run([tool("llvm-nm"), str(self.elf)],
+                             capture_output=True, text=True, check=True).stdout
+        self.sym = {}
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                self.sym[parts[2]] = int(parts[0], 16)
+
+    def test_image_end_is_defined(self):
+        self.assertIn("__firmware_image_end", self.sym,
+                      "linker/firmware.ld does not define __firmware_image_end")
+
+    def test_image_end_matches_the_binary(self):
+        size = os.path.getsize(self.bin)
+        length = self.sym["__firmware_image_end"] - 0x180100000
+        self.assertEqual(
+            length, size,
+            f"linker image end 0x{length:X} != .bin length 0x{size:X}; "
+            "`fw install` would write the wrong number of bytes")
+
+    def test_stack_top_is_inside_sram(self):
+        self.assertLessEqual(self.sym["_stack_top"], 0x1801E8000,
+                             "firmware stack runs past the top of SRAM")
+
+    def test_firmware_links_the_slot_store(self):
+        for sym in ("fw_store_scan", "fw_store_install", "fw_store_slot",
+                    "fw_run_slot"):
+            self.assertIn(sym, self.sym, f"{sym} missing from the firmware")
 
 
 if __name__ == "__main__":

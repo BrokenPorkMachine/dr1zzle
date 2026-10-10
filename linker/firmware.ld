@@ -47,6 +47,12 @@ SECTIONS
         *(.data*)
     } > FW
 
+    /* End of the bytes that make up the flat image: `.data` is the last
+     * PROGBITS section, so everything from the load base to here is what
+     * `goat seal` wraps and what the firmware writes back with `fw save`.
+     * objcopy's .bin ends exactly here, which the build test asserts. */
+    __firmware_image_end = .;
+
     __bss_start = .;
 
     .bss (NOLOAD) : ALIGN(4096)

@@ -45,15 +45,10 @@
 #include "console.h"
 #include "goat/loader.h"
 #include "firmware.h"
+#include "fw_store.h"
 
 extern int  usb_init(void);
 extern void reboot(void);
-
-/* fw_store.c */
-void            fw_store_scan(void);
-int             fw_store_count(void);
-const firmware_header_t *fw_store_slot(unsigned slot);
-void            fw_run_slot(unsigned slot);
 
 /* --- small helpers ------------------------------------------------------ */
 
@@ -113,19 +108,25 @@ static void list_firmwares(void) {
 }
 
 static void help(void) {
+    uart_puts("dr1zzle core (bootstrap + firmware loader)\n");
     uart_puts("commands:\n");
-    uart_puts("  list        show firmware slots\n");
-    uart_puts("  run <n>     load and enter firmware slot n\n");
-    uart_puts("  goat        goatloader / USB status\n");
-    uart_puts("  nand        NAND geometry (read-only)\n");
-    uart_puts("  ver         build identity\n");
-    uart_puts("  reboot      restart the SoC\n");
-    uart_puts("  help        this text\n");
+    uart_puts("  list          show firmware slots found on NAND\n");
+    uart_puts("  run <n>       copy slot n to staging, verify, and enter\n");
+    uart_puts("  fw install <n>  write the staged container to NAND slot n\n");
+    uart_puts("  goat          goatloader / TCP status\n");
+    uart_puts("  nand          NAND geometry and write counters\n");
+    uart_puts("  ver           build identity and firmware window\n");
+    uart_puts("  reboot        restart the SoC\n");
+    uart_puts("  help          this text\n");
     uart_puts("\n");
-    uart_puts("the full monitor (shell, dumps, display) lives in a firmware:\n");
-    uart_puts("  goat push <firmware.g1> --run   stage and enter the monitor\n");
-    uart_puts("  goat push <firmware.g1>         stage it, then `run <n>`\n");
-    uart_puts("  goat shell                      drive this menu over the link\n");
+    uart_puts("deliver firmware:\n");
+    uart_puts("  goat push <fw.g1> --run        stage and enter firmware\n");
+    uart_puts("  goat install <fw.g1> --slot n  stage and write to NAND\n");
+    uart_puts("  goat push <fw.g1>              stage it, then `run n`\n");
+    uart_puts("  goat shell                     drive this menu over the link\n");
+    uart_puts("\n");
+    uart_puts("the feature shell (dumps, AES, display, wifi, dashboard) lives in a\n");
+    uart_puts("firmware image linked at 0x180100000; see docs/MULTISTAGE_DESIGN.md\n");
 }
 
 static void show_goat(void) {
@@ -146,13 +147,23 @@ static void show_nand(void) {
     uart_puts(utoa(n->geometry.pages_per_block));
     uart_puts(" pages/block, ");
     uart_puts(utoa(n->geometry.block_count));
-    uart_puts(" blocks\n");
-    uart_puts("nand: ecc corrected=");
+    uart_puts(" blocks");
+    uart_puts(n->verified ? " (verified)\n" : " (unverified)\n");
+    uart_puts("nand: read ecc corrected=");
     uart_puts(utoa(n->ecc.corrected));
     uart_puts(" failed=");
     uart_puts(utoa(n->ecc.failed));
     uart_puts(" uncorrectable=");
     uart_puts(utoa(n->ecc.uncorrectable));
+    uart_puts("\n");
+    uart_puts("nand: write erased=");
+    uart_puts(utoa(n->write.erased));
+    uart_puts(" programmed=");
+    uart_puts(utoa(n->write.programmed));
+    uart_puts(" failed=");
+    uart_puts(utoa(n->write.write_failed));
+    uart_puts(" verify-failed=");
+    uart_puts(utoa(n->write.verify_failed));
     uart_puts("\n");
 }
 
@@ -215,6 +226,39 @@ static void dispatch(char *line) {
         } else {
             fw_run_slot(slot);   /* returns only on error */
             uart_puts("run: firmware did not start\n");
+        }
+    } else if (strcmp(verb, "fw") == 0) {
+        char *sub = rest;
+        char *arg = sub;
+        unsigned slot;
+
+        while (*arg && *arg != ' ' && *arg != '\t') arg++;
+        if (*arg) *arg++ = '\0';
+        while (*arg == ' ' || *arg == '\t') arg++;
+
+        if (strcmp(sub, "install") != 0) {
+            uart_puts("usage: fw install <slot>   (writes the staged image)\n");
+        } else if (parse_uint(arg, &slot) != 0 || slot >= FW_SLOT_COUNT) {
+            uart_puts("usage: fw install <slot>\n");
+        } else {
+            int rc = goatloader_install(slot, 0);
+            if (rc == 0) {
+                uart_puts("fw: installed to slot ");
+                uart_puts(utoa(slot));
+                uart_puts("  (`list`, then `run ");
+                uart_puts(utoa(slot));
+                uart_puts("`)\n");
+            } else if (rc == -1) {
+                uart_puts("fw: no key staged -- `goat push` first\n");
+            } else if (rc == -2) {
+                uart_puts("fw: no image staged -- `goat push` first\n");
+            } else if (rc == -3) {
+                uart_puts("fw: staged container failed verification\n");
+            } else if (rc == -4) {
+                uart_puts("fw: decryption failed\n");
+            } else {
+                uart_puts("fw: NAND write failed (bad block or no controller?)\n");
+            }
         }
     } else if (strcmp(verb, "goat") == 0) {
         show_goat();

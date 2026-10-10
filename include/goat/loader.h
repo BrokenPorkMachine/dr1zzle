@@ -86,4 +86,19 @@ int goatloader_stop(void);
  * before the first PUSH, or use the default. */
 void goatloader_set_stage(uint8_t *base, uint32_t capacity);
 
+/* Install the staged container's plaintext into NAND firmware slot `slot`.
+ * The container must already be staged (PUSH) and keyed (KEY), and it is
+ * verified again before it is decrypted. `name` labels the slot; NULL derives
+ * one from the certificate subject. Returns 0 on success, negative on failure
+ * (-1 no key, -2 no stage, -3 verify, -4 decrypt, -5 the store refused). */
+int goatloader_install(unsigned slot, const char *name);
+
+/* Backend for goatloader_install(): a hook so the loader does not link the
+ * NAND writer directly and stays buildable (and tested) on the host. This file
+ * provides a weak refusal; src/core/fw_store.c provides the definition that
+ * programs NAND, which is what both the core and the firmware link. */
+int goatloader_install_hook(unsigned slot, const uint8_t *image, uint32_t size,
+                            uint64_t load_base, uint32_t entry_off,
+                            const char *name);
+
 #endif /* GOAT_LOADER_H */

@@ -13,6 +13,7 @@ Subcommands:
     pwn       run checkm8 on a DFU device (delegates to the vendored ipwndfu)
     send      boot an image on a pwndfu device (alias: kload)
     push      push a sealed container to a device goatloader over TCP
+    install   stage a container and write it into a NAND firmware slot
     shell     interactive session against a device goatloader
     run       jump a pwndfu device to an address
     readmem   read device memory out to a file
@@ -401,10 +402,13 @@ def cmd_send(args):
     return 1
 
 
-def cmd_push(args):
-    """Push a sealed container to the device goatloader over TCP."""
-    with open(args.container_file, "rb") as fh:
-        der = fh.read()
+def _stage_container(args, der):
+    """HELLO/KEY/PUSH a container over TCP; returns (sock, fh, error).
+
+    Shared by `push` and `install` so the handshake and the staging-window
+    check live in one place. `error` is None on success, else a short reason;
+    the device's replies are printed either way.
+    """
     c = container.parse(der)
 
     sock = socket.create_connection((args.host, args.port), timeout=10)
@@ -429,6 +433,7 @@ def cmd_push(args):
         base = int(window.group(1), 16)
         size = int(window.group(2), 16)
         if not (base <= c.load_base and c.load_base + len(c.cipher) <= base + size):
+            sock.close()
             raise SystemExit(
                 "goat: container load base 0x%x does not fit the device's "
                 "staging window [0x%x, 0x%x); re-seal it with a load base "
@@ -438,8 +443,8 @@ def cmd_push(args):
     reply = fh.readline().decode().strip()
     print("device: %s" % reply)
     if not reply.startswith("GOAT/1 OK"):
-        print("goat: key rejected, aborting")
-        return 1
+        sock.close()
+        return None, None, "key rejected"
 
     send_line("GOAT/1 PUSH %d" % len(der))
     fh.write(der)
@@ -447,14 +452,68 @@ def cmd_push(args):
     reply = fh.readline().decode().strip()
     print("device: %s" % reply)
     if not reply.startswith("GOAT/1 OK"):
+        sock.close()
+        return None, None, "push refused"
+
+    return sock, fh, None
+
+
+def cmd_push(args):
+    """Push a sealed container to the device goatloader over TCP."""
+    with open(args.container_file, "rb") as fh:
+        der = fh.read()
+
+    sock, fh, error = _stage_container(args, der)
+    if error:
+        if error == "key rejected":
+            print("goat: key rejected, aborting")
         return 1
 
     if args.run:
-        send_line("GOAT/1 RUN")
+        fh.write(b"GOAT/1 RUN\n")
+        fh.flush()
         print("device: %s" % fh.readline().decode().strip())
-    send_line("GOAT/1 BYE")
+    fh.write(b"GOAT/1 BYE\n")
+    fh.flush()
     fh.readline()
     sock.close()
+    return 0
+
+
+def cmd_install(args):
+    """Stage a container, then have the device write it into a NAND slot.
+
+    This is the pristine install path: the device decrypts the sealed image
+    straight into its NAND slot with the ECC engine enabled and reads every
+    page back, so the copy on flash is the exact image the container carries.
+    (`fw save` on the device does the same from the running image, which is
+    convenient but snapshots its initialized .data.)
+    """
+    with open(args.container_file, "rb") as fh:
+        der = fh.read()
+
+    sock, fh, error = _stage_container(args, der)
+    if error:
+        if error == "key rejected":
+            print("goat: key rejected, aborting")
+        return 1
+
+    name = (" %s" % args.name) if args.name else ""
+    fh.write(("GOAT/1 INSTALL %d%s\n" % (args.slot, name)).encode("ascii"))
+    fh.flush()
+    reply = fh.readline().decode().strip()
+    print("device: %s" % reply)
+
+    fh.write(b"GOAT/1 BYE\n")
+    fh.flush()
+    fh.readline()
+    sock.close()
+
+    if not reply.startswith("GOAT/1 OK"):
+        print("goat: install failed")
+        return 1
+    print("goat: installed to NAND slot %d; the core menu can `run %d`"
+          % (args.slot, args.slot))
     return 0
 
 
@@ -609,6 +668,18 @@ def build_parser():
     sp.add_argument("--key-hex", required=True)
     sp.add_argument("--run", action="store_true")
     sp.set_defaults(func=cmd_push)
+
+    sp = sub.add_parser(
+        "install", help="stage a container and write it to a NAND firmware slot")
+    sp.add_argument("container_file")
+    sp.add_argument("--slot", type=int, required=True,
+                    help="NAND firmware slot index (see the core menu `list`)")
+    sp.add_argument("--name", default=None,
+                    help="slot label (default: certificate subject)")
+    sp.add_argument("--host", default=GOATLOADER_IP)
+    sp.add_argument("--port", type=int, default=GOATLOADER_PORT)
+    sp.add_argument("--key-hex", required=True)
+    sp.set_defaults(func=cmd_install)
 
     sp = sub.add_parser("shell", help="interactive goatloader session")
     sp.add_argument("--host", default=GOATLOADER_IP)

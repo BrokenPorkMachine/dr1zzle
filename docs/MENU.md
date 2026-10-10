@@ -79,3 +79,7 @@ physical address, so the test supplies its own backing store). It checks the
 three-band layout, that command output lands in the pane, that the echo window
 does not, that scrolling stays inside the pane, that `clear` recreates the
 canvas, and that a detached framebuffer makes every call a no-op.
+
+The test derives the pane geometry from `menu_panel_rows()` and the panel
+height rather than hardcoding row numbers, so adding a line to the panel
+summary (as the `fw` line did) does not make the layout test lie.

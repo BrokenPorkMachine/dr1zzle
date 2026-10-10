@@ -5,12 +5,10 @@
 
 #define USB_MAX_PACKET 512
 
-/* AIC line the AP side routes the DWC2 core to. pongoOS publishes this as
- * the t8015 platform value "otg_irq = 324"; it is quoted here so the
- * number lives in exactly one place, and because the payload can now let
- * an operator move it at runtime (`irq map usb <n>`) if silicon disagrees.
- * A wrong line costs an unclaimed IRQ, not a crash. */
-#define AIC_IRQ_USB_OTG 324
+/* AIC line the AP side routes the DWC2 core to. Supplied by the SoC profile
+ * (apple,t8015-usb gives otg_irq = 324 on A11). A wrong line costs an
+ * unclaimed IRQ, not a crash. */
+#define AIC_IRQ_USB_OTG SOC_IRQ_USB_OTG
 
 int  usb_init(void);
 void usb_irq_handler(void);

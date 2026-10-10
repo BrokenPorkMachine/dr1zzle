@@ -33,6 +33,7 @@
 #include "goat/goat.h"
 #include "goat/aes.h"
 #include "memory_map.h"
+#include "firmware.h"
 #include "net.h"
 #include "usb.h"
 #include "uart.h"
@@ -72,6 +73,7 @@ static int have_key;
 
 static uint64_t stat_pushed;
 static uint64_t stat_entered;
+static uint64_t stat_installed;
 static uint64_t stat_refused;
 static uint64_t stat_commands;
 
@@ -431,6 +433,58 @@ static void handle_line(session_t *session, char *line) {
             goat_enter(entry);
         }
     }
+    else if (strcmp(verb, "INSTALL") == 0) {
+        char *slot_text = token(&args);
+        char *name_text = token(&args);
+        uint64_t slot = 0;
+        uint64_t length = have_staged ? staged.payload_len : 0;
+        char label[17];
+        const char *label_ptr = name_text;
+
+        if (!slot_text || parse_count(slot_text, &slot) != 0 ||
+            slot >= FW_SLOT_COUNT) {
+            stat_refused++;
+            reply_add(&reply, GOATLOADER_PROTO " ERR install=expected-slot\n");
+        } else {
+            /* The label is the operator's if one was given, otherwise the
+             * certificate subject. Resolved here so the reply can name the
+             * slot without the store having to hand it back. */
+            if (!label_ptr && have_staged) {
+                uint32_t keep = staged.subject_len;
+                if (keep > sizeof label - 1u) keep = (uint32_t)sizeof label - 1u;
+                for (uint32_t i = 0; i < keep; i++) {
+                    label[i] = (char)staged.subject[i];
+                }
+                label[keep] = 0;
+                label_ptr = label;
+            }
+            int rc = goatloader_install((unsigned)slot, label_ptr);
+            if (rc == 0) {
+                reply_add(&reply, GOATLOADER_PROTO " OK install slot=");
+                reply_add_uint(&reply, slot);
+                reply_add(&reply, " len=");
+                reply_add_uint(&reply, length);
+                reply_add(&reply, " name=");
+                reply_add(&reply, label_ptr ? label_ptr : "-");
+                reply_add(&reply, "\n");
+                uart_puts("goatloader: installed slot ");
+                uart_puts(utoa(slot));
+                uart_puts(" ");
+                uart_puts(label_ptr ? label_ptr : "-");
+                uart_puts("\n");
+            } else {
+                const char *why = "failed";
+                stat_refused++;
+                if (rc == -1) why = "no-key";
+                else if (rc == -2) why = "no-stage";
+                else if (rc == -3) why = "verify";
+                else if (rc == -4) why = "decrypt";
+                reply_add(&reply, GOATLOADER_PROTO " ERR install=");
+                reply_add(&reply, why);
+                reply_add(&reply, "\n");
+            }
+        }
+    }
     else if (strcmp(verb, "BYE") == 0) {
         reply_add(&reply, GOATLOADER_PROTO " OK bye\n");
         reply_send(session, &reply);
@@ -453,6 +507,8 @@ static void handle_line(session_t *session, char *line) {
         reply_add_uint(&reply, stat_pushed);
         reply_add(&reply, " entered=");
         reply_add_uint(&reply, stat_entered);
+        reply_add(&reply, " installed=");
+        reply_add_uint(&reply, stat_installed);
         reply_add(&reply, " refused=");
         reply_add_uint(&reply, stat_refused);
         reply_add(&reply, " commands=");
@@ -600,6 +656,52 @@ static void session_service(session_t *session) {
 
 /* --- public surface ------------------------------------------------------ */
 
+/* Weak refusal: on a build that links no NAND writer (the host test), INSTALL
+ * reports that it is unsupported instead of failing to link. src/core/fw_store.c
+ * overrides this with the strong definition that programs the slot. */
+__attribute__((weak))
+int goatloader_install_hook(unsigned slot, const uint8_t *image, uint32_t size,
+                            uint64_t load_base, uint32_t entry_off,
+                            const char *name) {
+    (void)slot; (void)image; (void)size; (void)load_base; (void)entry_off;
+    (void)name;
+    return -1;
+}
+
+int goatloader_install(unsigned slot, const char *name) {
+    char derived[17];
+    const char *label = name;
+    uint64_t load_base = 0;
+    uint64_t entry = 0;
+    int rc;
+
+    if (slot >= FW_SLOT_COUNT) return -5;
+    if (!have_key) return -1;
+    if (!have_staged) return -2;
+    if (goat_verify(&staged) != 0) return -3;
+
+    /* The subject is captured before decrypt: goat_decrypt() writes the
+     * plaintext over the staging window, which is where the container's own
+     * bytes live, and the header this label feeds is built from those bytes. */
+    if (!label) {
+        uint32_t keep = staged.subject_len;
+        if (keep > sizeof derived - 1u) keep = (uint32_t)sizeof derived - 1u;
+        for (uint32_t i = 0; i < keep; i++) derived[i] = (char)staged.subject[i];
+        derived[keep] = 0;
+        label = derived;
+    }
+
+    if (goat_decrypt(&staged, pending_key, &load_base, &entry) != 0) return -4;
+
+    rc = goatloader_install_hook((unsigned)slot,
+                                 (const uint8_t *)(uintptr_t)load_base,
+                                 (uint32_t)staged.payload_len, load_base,
+                                 (uint32_t)staged.entry_off, label);
+    if (rc != 0) return -5;
+    stat_installed++;
+    return 0;
+}
+
 int goatloader_init(void) {
     unsigned index;
 
@@ -620,7 +722,7 @@ int goatloader_init(void) {
     have_key = 0;
     have_staged = 0;
     goat_staged_container = 0;
-    stat_pushed = stat_entered = stat_refused = stat_commands = 0;
+    stat_pushed = stat_entered = stat_installed = stat_refused = stat_commands = 0;
 
     listener = tcp_listen(GOATLOADER_PORT);
     /* -1 here is not a failure of the server, only of this attempt: the
@@ -687,6 +789,8 @@ void goatloader_report(void) {
     uart_puts(utoa(stat_pushed));
     uart_puts(" entered=");
     uart_puts(utoa(stat_entered));
+    uart_puts(" installed=");
+    uart_puts(utoa(stat_installed));
     uart_puts(" refused=");
     uart_puts(utoa(stat_refused));
     uart_puts(" commands=");

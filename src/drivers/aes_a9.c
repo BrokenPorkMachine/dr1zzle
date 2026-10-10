@@ -37,12 +37,9 @@ static uint64_t gAESClockAddr;
 
 void aes_a9_init(void)
 {
-    /* A11 DCP AES is at DCP_BASE + 0x8000 */
-    gAESBase = DCP_BASE + 0x8000;
-    gAESPipeBase = gAESBase + 0x200;
-
-    /* A11 AES clock gate is at 0x20E00000 + 0x32080240 = 0x240080240 */
-    gAESClockAddr = 0x240080240ULL;
+    gAESBase = DCP_BASE + SOC_DCP_AES_OFFSET;
+    gAESPipeBase = gAESBase + SOC_DCP_AES_PIPE_OFFSET;
+    gAESClockAddr = SOC_AES_CLK_GATE;
 
     /* Reset AES engine */
     rAES_CTL = 0;

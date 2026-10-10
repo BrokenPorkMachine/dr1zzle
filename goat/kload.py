@@ -29,7 +29,7 @@ Three image forms are accepted, identified from the file's own bytes:
 
 The exploit itself is not here: this module contains no exploit logic. It
 calls the same checkm8 entry point `goat pwn` uses, which shells out to the
-vendored ipwndfu (Python 2).
+vendored ipwndfu.
 """
 
 import struct

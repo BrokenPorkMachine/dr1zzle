@@ -15,6 +15,7 @@ told anything.
 ```
   goat push payload.img4 --key-hex ...     stages a sealed container
   goat push payload.img4 --key-hex ... --run
+  goat install payload.img4 --slot 3 --key-hex ...   writes it to a NAND slot
   goat shell                                drives the monitor console
   ssh/scp: not offered by this build        see docs/REMOTE_ACCESS.md
 ```
@@ -26,6 +27,7 @@ The listener is the transport the rest of the features hang off:
 | Feature | What it needs from the server |
 |---|---|
 | `goat push` | `KEY`, `PUSH` |
+| `goat install` | `KEY`, `PUSH`, `INSTALL` |
 | `goat shell` | the shell passthrough |
 | `goat run` / a launched payload | `RUN`, and the staged container |
 
@@ -70,6 +72,7 @@ run as a shell command, so a human on a socket can type `help`.
 | `GOAT/1 RUN` | `RUN loadBase=... entry=...` then enters | every refusal names itself: `no-key`, `no-stage`, `verify`, `decrypt` |
 | `GOAT/1 ABORT` | `OK aborted` | drops the staged container |
 | `GOAT/1 STATUS` | `OK active=1 sessions=... staged=... key=... pushed=... entered=...` | `active` is `1` because that is the contract |
+| `GOAT/1 INSTALL <slot> [name]` | `OK install slot=N len=L name=...` / `ERR install=...` | writes the staged container into NAND firmware slot `N` |
 | `GOAT/1 BYE` | `OK bye` | closes the session |
 | anything else | command output | the monitor console, same commands as UART |
 
@@ -84,6 +87,17 @@ exactly the case where re-checking costs one signature and saves an image.
 The reply to `RUN` is queued before `goat_enter()` is called. Once the payload
 is entered there is no loop left to service the transmit queue, so the host
 tool would otherwise wait on a line that never came.
+
+`INSTALL` is the third thing a staged container can be asked to do, after
+`RUN`. It takes the same decrypted image and hands it to the NAND slot writer
+(`fw_store_install()`): the slot's blocks are erased, every page is programmed
+with the controller's ECC engine enabled, and every page is read back through
+that engine and compared before the call reports success. So `goat install
+payload.g1 --slot N` is the pristine path onto flash — the bytes come from the
+sealed container, not from anything running in RAM. The label is the one given
+on the command line, or the certificate subject otherwise. `src/goat/loader.c`
+captures the subject *before* decrypting, because decryption overwrites the
+staged buffer the subject points into.
 
 ## What it does not do
 
@@ -132,7 +146,8 @@ silicon, and `docs/TASK_STATUS.md` says so.
 |---|---|
 | `include/goat/loader.h` | the interface, the port, the reply contract |
 | `src/goat/loader.c` | the state machine and the protocol |
+| `include/fw_store.h`, `src/core/fw_store.c` | the NAND slot writer `INSTALL` calls |
 | `include/net.h`, `src/net/tcp.c` | the pre-configured static address |
 | `src/drivers/cdc_ecm.c` | frame assembly and the transmit queue |
 | `src/shell/shell.c` | `shell_exec()`, the `server` command, the idle loop |
-| `goat/cli.py` | the host side: `goat push`, `goat shell` |
+| `goat/cli.py` | the host side: `goat push`, `goat install`, `goat shell` |

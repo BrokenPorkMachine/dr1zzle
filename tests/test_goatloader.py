@@ -36,7 +36,7 @@ class LoaderProtocol(unittest.TestCase):
             subprocess.run([
                 cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-fsanitize=address,undefined",
-                "-Iinclude", "-Isrc",
+                "-Iinclude", "-Isrc", "-DSOC_t8015",
                 "src/goat/loader.c", "src/util.c",
                 "tests/goatloader_test.c", "-o", str(binary),
             ], cwd=ROOT, check=True)

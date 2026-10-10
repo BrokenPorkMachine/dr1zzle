@@ -73,6 +73,7 @@ C_SRCS := \
 	$(SRC_DIR)/vfs/vfs.c \
 	$(SRC_DIR)/vfs/apfs_vfs.c \
 	$(SRC_DIR)/stdlib.c \
+	$(SRC_DIR)/core/fw_store.c \
 	$(SRC_DIR)/shell/shell.c \
 	$(SRC_DIR)/string.c \
 	$(SRC_DIR)/research/keybag.c \
@@ -163,12 +164,24 @@ STAGE1_LDSCRIPT := $(LINKER_DIR)/stage1.ld
 STAGE2_LDSCRIPT := $(LINKER_DIR)/stage2.ld
 STAGE3_LDSCRIPT := $(LINKER_DIR)/stage3.ld
 
+# SoC profile — selects which include/soc/<soc>.h is pulled in via -DSOC_<soc>.
+# One binary per SoC, like the boards/ profiles. A new SoC is a new header
+# under include/soc/ plus a matching #elif in include/soc.h.
+SOC ?= t8015
+SOC_DEFINE := -DSOC_$(SOC)
+
+# SoC profile — selects which include/soc/<soc>.h is pulled in via -DSOC_<soc>.
+# One binary per SoC, like the boards/ profiles. A new SoC is a new header
+# under include/soc/ plus a matching #elif in include/soc.h.
+SOC ?= t8015
+SOC_DEFINE := -DSOC_$(SOC)
+
 # Compiler flags
 CFLAGS := -std=c11 -ffreestanding -nostdlib -nodefaultlibs
 CFLAGS += -Wall -Wextra -Werror -O2 -g
 CFLAGS += -march=armv8-a -mcpu=cortex-a73
 CFLAGS += -I$(INC_DIR) -I$(SRC_DIR)
-CFLAGS += -DARCH_AARCH64 -D__BARE_METAL__
+CFLAGS += -DARCH_AARCH64 -D__BARE_METAL__ $(SOC_DEFINE) $(SOC_DEFINE)
 
 ASMFLAGS := -I$(INC_DIR) -I$(SRC_DIR)/arch/arm64
 
@@ -386,7 +399,7 @@ size: $(BUILD_DIR)/$(TARGET).elf
 
 # Portable, budget-enforced QEMU hardware profiles (separate from A11 payload).
 PROFILE ?= small
-.PHONY: profiles profiles-test profiles-qemu phase4-test goat-test loader-test menu-test
+.PHONY: profiles profiles-test profiles-qemu phase4-test goat-test loader-test ipwndfu-test menu-test soc-test
 profiles:
 	$(MAKE) -f boards/Makefile PROFILE=$(PROFILE)
 profiles-test:
@@ -402,6 +415,17 @@ goat-test:
 
 loader-test:
 	python3 tests/test_goatloader.py
+
+# The SoC registry, checked against the two vendored files that claim to
+# define its geometry: ipwndfu/device_platform.py and ipwndfu/checkm8.py. No
+# device is involved, so this runs anywhere the payload builds.
+soc-test:
+	python3 tests/test_socs.py
+
+# The vendored checkm8 tree (ipwndfu/) runs under Python 3 now that no
+# current macOS ships a Python 2. These keep it that way.
+ipwndfu-test:
+	python3 tests/test_ipwndfu.py
 
 # Host test for the on-screen menu: panel/pane layout and bounded scrolling.
 menu-test:

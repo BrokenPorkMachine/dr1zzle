@@ -2,38 +2,27 @@
 
 goat does not reimplement the exploit. It is a large, fragile, well-tested body
 of work with nothing to do with loading images, and this project vendors it
-(ipwndfu/ is upstream checkm8 tooling, Python 2). Everything after `goat pwn`
-is goat's own: its own transport, its own container, its own loader protocol.
+(ipwndfu/, upstream checkm8 tooling). Everything after `goat pwn` is goat's
+own: its own transport, its own container, its own loader protocol.
 
 This module shells out to the vendored ipwndfu with `-p` (checkm8) and then
 confirms the device re-enumerated as pwndfu.
 """
 
-import shutil
 import subprocess
 import sys
 
 from .usb import PwnedDFU, LibusbDeviceList, UsbError
 
 
-def _find_python2():
-    for candidate in ("python2", "python2.7"):
-        path = shutil.which(candidate)
-        if path:
-            return path
-    return None
+def checkm8(ipwndfu_dir="ipwndfu", interpreter=None, wait=10.0):
+    """Exploit the DFU device into pwndfu state. Returns 0 on success.
 
-
-def checkm8(ipwndfu_dir="ipwndfu", python2=None, wait=10.0):
-    """Exploit the DFU device into pwndfu state. Returns 0 on success."""
-    interpreter = python2 or _find_python2()
-    if interpreter is None:
-        print("goat: python2 was not found.")
-        print("goat: install it (macOS: 'brew install python@2'; Debian: "
-              "'apt install python2') or put the device into pwndfu yourself "
-              "before running 'goat send'.")
-        return 1
-
+    The vendored tree arrived as Python 2, which no current macOS ships and
+    which arm64 Homebrew no longer builds. It is ported to Python 3 in place,
+    so the interpreter is the one goat itself runs under.
+    """
+    interpreter = interpreter or sys.executable or "python3"
     print("goat: running checkm8 via %s (ipwndfu -p)" % interpreter)
     proc = subprocess.run([interpreter, "ipwndfu", "-p"], cwd=ipwndfu_dir)
     if proc.returncode != 0:

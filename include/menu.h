@@ -1,6 +1,8 @@
 #ifndef DR1ZZLE_MENU_H
 #define DR1ZZLE_MENU_H
 
+#include <stdint.h>
+
 /* On-screen menu for the firmware monitor (src/ui/menu.c).
  *
  * The framebuffer is split into three bands of text rows:
@@ -38,6 +40,12 @@ void menu_exec_end(void);     /* stop mirroring (echo/prompts stay serial-only) 
 void menu_status_write(const char *s); /* rewrite the pinned status line */
 
 int  menu_active(void);       /* 1 iff the menu owns a live framebuffer */
+
+/* The row index of the separator under the panel: the panel occupies rows
+ * 0..menu_panel_rows(), and the output pane starts on the row after it. The
+ * host test derives the pane geometry from this rather than hardcoding it,
+ * which would break every time the panel summary gains a line. */
+uint32_t menu_panel_rows(void);
 
 /* Called by uart.c for every emitted byte; this strong definition feeds the
  * pane while a command is executing. The core has only the weak no-op. */
