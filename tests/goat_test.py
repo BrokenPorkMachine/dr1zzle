@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +148,22 @@ class TestPwnPreflight(unittest.TestCase):
         self.assertNotIn(0x8020, pwn.CHECKM8_CPIDS)
         self.assertEqual(pwn.USBLITER8_CPIDS, {0x8020, 0x8030})
         self.assertNotIn(0x8027, pwn.USBLITER8_CPIDS)
+
+    def test_unreachable_cpid_is_refused_before_ipwndfu(self):
+        class Device:
+            serial = "CPID:8020 CPRV:11"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with mock.patch.object(pwn, "LibusbDeviceList", return_value=object()), \
+                mock.patch.object(pwn, "PwnedDFU", return_value=Device()), \
+                mock.patch.object(pwn.subprocess, "run") as run:
+            self.assertEqual(pwn.checkm8(interpreter="python3"), 1)
+        run.assert_not_called()
 
 
 class TestElfParsing(unittest.TestCase):

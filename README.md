@@ -36,6 +36,7 @@ make profiles-qemu # boot the portable monitor on QEMU virt
 make qemu          # display window plus interactive UART in this terminal
 make qemu-headless # UART-only QEMU monitor
 make profiles-test # sanitizer, linker-budget, and QEMU boot checks
+make host-test     # all host-side unit and profile checks
 make phase4-test   # host-test AES, APFS, and KBAG primitives
 ```
 

@@ -78,8 +78,8 @@ def checkm8(ipwndfu_dir="ipwndfu", interpreter=None, wait=10.0):
                   "this host's USB stack." % USBLITER8_HARDWARE)
         else:
             print("goat: CPID 0x%04X has no exploit path in this tree. "
-                  "checkm8 ends at the A11 and usbliter8 covers the A12 and "
-                  "A13 only." % cpid)
+                  "checkm8 ends at the A11; the recorded usbliter8 targets "
+                  "are the A12 and A13." % cpid)
         print("goat: refused before attempting the exploit.")
         return 1
 
