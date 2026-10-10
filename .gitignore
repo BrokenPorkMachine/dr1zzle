@@ -1,0 +1,14 @@
+# Editor / OS noise
+.DS_Store
+*~
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+
+# Archives
+*.zip
+
+# Stray nested repo (empty working tree)
+/main/

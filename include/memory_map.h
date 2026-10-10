@@ -47,6 +47,9 @@
 #define BLOCK_SIZE          0x200000    /* 2MB */
 #define L3_TABLE_SIZE       0x1000      /* 512 entries * 8 bytes */
 
+/* IO base address for peripheral registers */
+#define IO_BASE             0x200000000ULL
+
 /* MAIR attributes */
 #define MAIR_ATTR_NORMAL    0xFF        /* AttrIdx=0: Normal, WBWA */
 #define MAIR_ATTR_DEVICE    0x04        /* AttrIdx=1: Device-nGnRnE */
@@ -57,8 +60,8 @@
 #define DESC_BLOCK          (0ULL << 1)
 #define DESC_AF             (1ULL << 10)
 #define DESC_NG             (1ULL << 11)
-#define DESC_AP_RO          (1ULL << 6)   /* AP=01: Read-only */
-#define DESC_AP_RW          (0ULL << 6)   /* AP=00: Read-write */
+#define DESC_AP_RO          (2ULL << 6)   /* AP=10: EL1 read-only */
+#define DESC_AP_RW          (0ULL << 6)   /* AP=00: EL1 read-write */
 #define DESC_NS             (1ULL << 5)
 #define DESC_ATTR_IDX(x)    (((x) & 7) << 2)
 #define DESC_PXN            (1ULL << 53)
@@ -69,5 +72,14 @@ extern char _heap_start[];
 extern char _heap_end[];
 extern char _stack_top[];
 extern char _stack_bottom[];
+
+/* Device tree pointer the bootloader passed in x0, published by start.S.
+ * Zero if the entry point did not supply one. Only a small subset of the
+ * tree is parsed (see display_attach.c), but it is the authoritative source
+ * for platform geometry such as the framebuffer. */
+extern uint64_t g_boot_dtb;
+
+/* Boot arguments string, set by the bootloader or modified at runtime. */
+extern char *g_boot_args;
 
 #endif /* MEMORY_MAP_H */

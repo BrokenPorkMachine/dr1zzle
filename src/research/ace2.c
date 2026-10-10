@@ -1,5 +1,6 @@
 #include "ace2.h"
 #include "uart.h"
+#include "timer.h"
 #include "util.h"
 #include "memory_map.h"
 
@@ -30,8 +31,8 @@ void ace2_init(void) {
     while (ace2_read(0x10) & 1) {} /* Wait for reset */
     
     /* Set frame list base address */
-    ace2_write(0x24, 0x180010000); /* PeriodicListBase */
-    ace2_write(0x28, 0x180011000); /* AsyncListAddr */
+    ace2_write(0x24, (uint32_t)0x180010000UL); /* PeriodicListBase */
+    ace2_write(0x28, (uint32_t)0x180011000UL); /* AsyncListAddr */
     
     /* Configure USB command */
     ace2_write(0x10, 0x80000001); /* Run/Stop=1, AsyncScheduleEnable=1, PeriodicScheduleEnable=1 */
@@ -43,7 +44,6 @@ void ace2_dump(void) {
     uart_puts("=== ACE2/ACE3 Register Dump ===\n");
     
     for (uint32_t offset = 0; offset <= 0x200; offset += 4) {
-        uint32_t val = ace2_read(offset);
         if (offset % 64 == 0) {
             uart_puts("\n0x"); uart_puts(utoa_hex(ACE2_BASE + offset)); uart_puts(": ");
         }

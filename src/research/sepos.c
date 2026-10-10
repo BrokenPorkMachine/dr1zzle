@@ -1,5 +1,7 @@
 #include "sepos.h"
 #include "uart.h"
+#include "timer.h"
+#include "util.h"
 #include "memory_map.h"
 #include "usb.h"
 
@@ -35,7 +37,7 @@ int sep_send_command(uint16_t opcode, const uint8_t *data, uint32_t len) {
             ((uint8_t *)&msg)[i] = data[i];
         }
     } else {
-        for (int i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
             ((uint8_t *)&msg)[i] = data[i];
         }
     }
@@ -73,7 +75,6 @@ void dump_sepos(void) {
     uart_puts("SEP ping OK\n");
     
     /* Get random data (tests SEP crypto) */
-    uint8_t random[32];
     if (sep_send_command(0x10, 0, 0) == 0) {
         uart_puts("Got random data from SEP\n");
     }

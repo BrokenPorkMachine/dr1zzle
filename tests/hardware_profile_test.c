@@ -1,0 +1,50 @@
+#include <drizzle/hardware.h>
+#define CHECK(x) do { if (!(x)) return __LINE__; } while (0)
+int main(void) {
+    drizzle_hw_profile p = drizzle_hw_qemu_small;
+    uint64_t left = 123;
+    CHECK(drizzle_hw_validate(NULL) == DRIZZLE_HW_INVALID);
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_OK);
+    CHECK(drizzle_hw_validate(&drizzle_hw_qemu_monitor) == DRIZZLE_HW_OK);
+    CHECK(drizzle_hw_admit(&p, p.budget.image, p.budget.heap, p.budget.stack, &left) == DRIZZLE_HW_OK);
+    CHECK(left == 0);
+    left = 123;
+    CHECK(drizzle_hw_admit(&p, p.budget.image + 1, 0, 16, &left) == DRIZZLE_HW_BUDGET);
+    CHECK(left == 123);
+    CHECK(drizzle_hw_admit(&p, 16, p.budget.heap + 1, 16, NULL) == DRIZZLE_HW_BUDGET);
+    CHECK(drizzle_hw_admit(&p, 16, 0, p.budget.stack + 1, NULL) == DRIZZLE_HW_BUDGET);
+    CHECK(drizzle_hw_admit(&p, 0, 0, 16, NULL) == DRIZZLE_HW_BUDGET);
+    p.budget.heap = 0;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_OK);
+    p.budget.image = UINT64_MAX - 15;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_BUDGET);
+    p = drizzle_hw_qemu_small;
+    p.region_count = DRIZZLE_HW_MAX_REGIONS + 1;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_INVALID);
+    p = drizzle_hw_qemu_small;
+    p.regions[1] = p.regions[0];
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_OVERLAP);
+    p.regions[1].base = p.regions[0].base + p.regions[0].size;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_OK);
+    p.regions[1].base = UINT64_MAX;
+    p.regions[1].size = 1;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_RANGE);
+    p = drizzle_hw_qemu_small;
+    p.arena_base = p.regions[0].base + p.regions[0].size;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_RANGE);
+    p = drizzle_hw_qemu_small;
+    p.arena_base++;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_RANGE);
+    p = drizzle_hw_qemu_small;
+    p.regions[0].kind = DRIZZLE_RESERVED;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_RANGE);
+    p = drizzle_hw_qemu_small;
+    p.version++;
+    CHECK(drizzle_hw_validate(&p) == DRIZZLE_HW_INVALID);
+    p = drizzle_hw_qemu_small;
+    CHECK(!drizzle_hw_contains(&p.regions[0], p.regions[0].base, 0));
+    CHECK(!drizzle_hw_contains(&p.regions[0], UINT64_MAX, 16));
+    CHECK(drizzle_hw_contains(&p.regions[0], p.regions[0].base, p.regions[0].size));
+    CHECK(!drizzle_hw_contains(&p.regions[0], p.regions[0].base - 1, 1));
+    return 0;
+}

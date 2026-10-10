@@ -1,0 +1,27 @@
+# Host tests for the dashboard layout engine.
+#
+# The layout engine is the part that must be right without hardware: scope
+# filtering, group moves, pair offsets, group locking, collision and range
+# rejection, and tiling. Rendering is stubbed; only geometry is exercised.
+#
+#   make -f tests/Makefile.dashboard test
+
+HOST_CC ?= cc
+TEST_DIR ?= /tmp/dr1zzle-dashboard-tests
+FLAGS := -std=c11 -Wall -Wextra -Werror -iquote include -iquote src -O1 -g
+
+# dashboard.c pulls in display.h and console.h; render + console are stubbed.
+STUB_SRCS := tests/dashboard_stubs.c
+DASH_SRCS := src/ui/dashboard.c src/drivers/font8x8.c
+
+.PHONY: test
+test:
+	mkdir -p $(TEST_DIR)
+	$(HOST_CC) $(FLAGS) -fsanitize=address,undefined \
+		$(DASH_SRCS) $(STUB_SRCS) tests/dashboard_test.c \
+		-o $(TEST_DIR)/dashboard-test
+	$(TEST_DIR)/dashboard-test
+
+.PHONY: clean
+clean:
+	rm -rf $(TEST_DIR)

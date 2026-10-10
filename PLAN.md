@@ -19,6 +19,7 @@
 | **5** | 1 week | ACE2 dump + SEP mailbox | Peripheral dump |
 | **6** | 1 week | Research modules (KBAG, iBoot, kernel patch, panic) | Full feature set |
 | **7** | 1 week | Shell polish, host tool, testing, CI | Production ready |
+| **8** | 6 weeks | Dumps, CPU snapshots, SSH/SCP on 443, streaming | Remote instrument |
 
 ---
 
@@ -118,62 +119,67 @@ Host: telnet 192.168.42.1 23
 
 ---
 
-## Phase 3: Core Peripheral Drivers (Weeks 4-5) ⏳ PENDING
+## Phase 3: Core Peripheral Drivers (Weeks 4-5) 🔄 IMPLEMENTED, SILICON VERIFICATION PENDING
 
 ### Deliverables
-- [ ] PMGR (device states, clocks, resets)
-- [ ] GPIO (read/write/function select)
-- [ ] I2C master (scan/read/write)
-- [ ] SPI master (transfer)
-- [ ] Watchdog (arm/kick/disable)
-- [ ] All accessible via shell commands
+- [x] PMGR (device states, clocks, resets)
+- [x] GPIO (read/write/function select)
+- [x] I2C master (scan/read/write)
+- [x] SPI master (transfer)
+- [x] Watchdog (arm/kick/disable, disarmed at boot)
+- [x] All accessible via shell commands
+- [x] AIC v1 interrupt controller init, so IRQ dispatch routes on the
+      controller's line number instead of polling named sources
 
 ### Tasks
 | Task | File | Reference | Status |
 |------|------|-----------|--------|
-| PMGR register map + device lookup | `src/drivers/pmgr.c` | iphem-devices PmgrPowerState | ⏳ |
-| PMGR get/set device state | `pmgr.c` | iphem-soc PMGR_BASE | ⏳ |
-| PMGR clock enable/disable | `pmgr.c` | — | ⏳ |
-| GPIO function select + read/write | `src/drivers/gpio.c` | iphem-devices AppleGpio | ⏳ |
-| I2C master (polling) | `src/drivers/i2c.c` | iphem-devices I2c | ⏳ |
-| I2C bus scan command | `src/shell/shell.c` | — | ⏳ |
-| SPI master (polling) | `src/drivers/spi.c` | iphem-devices Spi | ⏳ |
-| Watchdog init/kick/disable | `src/drivers/watchdog.c` | iphem-devices Watchdog | ⏳ |
-| Shell commands for all above | `src/shell/shell.c` | — | ⏳ |
+| PMGR register map + device lookup | `src/drivers/pmgr.c` | iphem-devices PmgrPowerState | ✅ |
+| PMGR get/set device state | `pmgr.c` | iphem-soc PMGR_BASE | ✅ |
+| PMGR clock enable/disable | `pmgr.c` | — | ✅ (GPIO/I2C/SPI/WDT masks unknown → 0, see pmgr.c) |
+| GPIO function select + read/write | `src/drivers/gpio.c` | iphem-devices AppleGpio | ✅ |
+| I2C master (polling) | `src/drivers/i2c.c` | iphem-devices I2c | ✅ |
+| I2C bus scan command | `src/shell/shell.c` | — | ✅ |
+| SPI master (polling) | `src/drivers/spi.c` | iphem-devices Spi | ✅ |
+| Watchdog init/kick/disable | `src/drivers/watchdog.c` | iphem-devices Watchdog | ✅ |
+| Shell commands for all above | `src/shell/shell.c` | — | ✅ |
+| AIC v1 init + EOI | `src/drivers/aic.c`, `src/arch/arm64/exception.c` | apple,t8015-aic | ✅ |
 
 ### Acceptance Criteria
 ```
-research> pmgr get 0x20 → 1 (USB on)
-research> gpio read 42 → 0/1
-research> i2c scan → [0x48, 0x68, ...]
-research> spi xfer 0x9F → [0xEF, 0x40, 0x18] (flash ID)
-research> watchdog arm 5 → reboots in 5s if not kicked
+research> pmgr status        → gate_status=0x...
+research> gpio func 31 1     → pin 31 on its peripheral, level readable
+research> i2c scan           → [0x48, 0x68, ...]
+research> spi id             → [0xEF, 0x40, 0x18] (flash ID)
+research> wdog arm 5         → reboots in 5s if not kicked
+research> irq stat           → handled grows as USB traffic arrives
 ```
 
 ---
 
-## Phase 4: Storage + Crypto (Weeks 6-7) ⏳ PENDING
+## Phase 4: Storage + Crypto (Weeks 6-7) ✅ IMPLEMENTED (hardware verification pending)
 
 ### Deliverables
-- [ ] NAND controller (read ID, read page, ECC)
-- [ ] APFS reader (container → volume → file)
-- [ ] AES engine (GID decrypt, KBAG parse)
-- [ ] Full NAND dump + APFS file extraction
+- [x] NAND controller (read ID, read page, controller ECC status)
+- [x] APFS reader (container → volume → B-tree extent)
+- [x] AES engine (GID block transactions and software known vectors)
+- [x] Bounded NAND page dump and APFS extent streaming callbacks
+- [x] KBAG parsing with internal GID-decryption status checks
 
 ### Tasks
 | Task | File | Reference | Status |
 |------|------|-----------|--------|
-| NAND controller init + ID read | `src/drivers/nand.c` | pongoOS nand.c | ⏳ |
-| NAND read page (column + row addr) | `nand.c` | pongoOS nand_read_page | ⏳ |
-| BCH-8 ECC correction | `nand.c` | Linux mtd/nand | ⏳ |
-| Bad block scanning | `nand.c` | — | ⏳ |
-| APFS container locate (NXSB) | `src/fs/apfs.c` | iphem-devices apfs.rs | ⏳ |
-| APFS checkpoint → superblock → volume | `apfs.c` | iphem-devices | ⏳ |
-| B-tree traversal → file read | `apfs.c` | iphem-devices | ⏳ |
-| AES engine (GID decrypt flow) | `src/drivers/aes.c` | pongoOS aes.c | ⏳ |
-| KBAG parse (IMG4 element 4) | `src/research/keybag.c` | IMG4 spec | ⏳ |
-| KBAG decrypt (GID-wrapped keys) | `keybag.c` | pongoOS aes.c | ⏳ |
-| Shell commands: nand, apfs, aes, keybag | `shell.c` | — | ⏳ |
+| NAND controller init + ID read | `src/drivers/nand.c` | controller map | ✅ implemented, unverified |
+| NAND read page (column + row addr) | `nand.c` | NAND command sequence | ✅ implemented, unverified |
+| BCH-8 ECC status/checking | `nand.c` | controller ECC status | ✅ conservative host-safe path |
+| Bad block scanning | `nand.c` | — | ✅ implemented |
+| APFS container locate (NXSB) | `src/fs/apfs.c` | APFS reference | ✅ implemented |
+| APFS checkpoint → superblock → volume | `apfs.c` | APFS reference | ✅ bounded scan |
+| B-tree traversal → extent read | `apfs.c` | APFS reference | ✅ OMAP/path lookup pending |
+| AES engine (GID decrypt flow) | `src/drivers/aes.c` | hardware map | ✅ implemented, unverified |
+| KBAG parse (IMG4 element 4) | `src/research/keybag.c` | IMG4/DER | ✅ implemented |
+| KBAG GID check | `keybag.c` | AES engine | ✅ status-only; key bytes withheld |
+| Shell commands: nand, apfs, aes, keybag | `shell.c` | — | ✅ implemented |
 
 ### Acceptance Criteria
 ```
@@ -182,6 +188,16 @@ research> apfs extract /kernelcache → 50 MB kernelcache.bin
 research> aes test → GID decrypt matches known vector
 research> keybag kernelcache.img4 → [class: 0x1, key: 32 bytes]
 ```
+
+On a Mac without A11 silicon, the verified equivalent is:
+
+```bash
+make -B BUILD_DIR=/tmp/dr1zzle-build
+make phase4-test
+```
+
+The device commands report hardware availability and metadata; they do not
+print GID-derived key bytes to the console.
 
 ---
 
@@ -272,6 +288,61 @@ CI: push → build → test → artifacts uploaded
 
 ---
 
+## Phase 8: Remote Instrument (Weeks 11-16) 📋 SPECIFIED
+
+v2.0 of the spec adds dumps, CPU snapshots and remote access. The plan is
+ordered so that every block that can be verified without silicon is verified
+without silicon.
+
+### Deliverables
+- [ ] `DZ1` dump container: chunk records, CRC32, streaming SHA-256, trailer
+- [ ] Dump source registry extended with read callbacks
+- [ ] `DZREGS1` snapshot capture, staged in SRAM on fault
+- [ ] Link abstraction with the USB CDC-ECM backend behind it
+- [ ] `net_recv_frame` wired to the CDC-ECM RX path (currently dropped)
+- [ ] Windowed TCP sender, link-MTU segment sizing
+- [ ] Stream scheduler driven from `net_poll()`
+- [ ] Crypto primitives: SHA-512, HMAC-SHA-256, X25519, Ed25519, ChaCha20,
+      Poly1305, AES-128-CTR
+- [ ] SSH-2 transport, userauth, connection, session channel
+- [ ] SFTP v3 and legacy SCP over the registry, listener on 443
+- [ ] Console input refactor so a session channel feeds `execute()`
+- [ ] Audit line
+
+### Tasks
+| Task | File | Reference | Status |
+|------|------|-----------|--------|
+| Crypto primitives + RFC vectors | `src/crypto/` | SSH_SCP_443.md §6 | 📋 |
+| `DZ1` codec + CRC32 + host tests | `src/net/stream.c` | DUMP_WIRE_FORMAT.md §1-3 | 📋 |
+| Registry callbacks | `src/drivers/dump.c` | SPEC.md §5.1 | 📋 |
+| Snapshot capture + staging | `src/arch/arm64/exception.c` | DUMP_WIRE_FORMAT.md §4 | 📋 |
+| Link registry + selection | `src/net/link.c` | TRANSPORT.md §1 | 📋 |
+| RX wiring | `src/drivers/cdc_ecm.c` | TRANSPORT.md §1 | 📋 |
+| Windowed sender | `src/net/tcp.c` | TRANSPORT.md §3 | 📋 |
+| Stream job + scheduler | `src/net/stream.c` | TRANSPORT.md §5 | 📋 |
+| SSH server | `src/net/ssh.c` | SSH_SCP_443.md §4-8 | 📋 |
+| SFTP + SCP | `src/net/sftp.c` | SSH_SCP_443.md §7 | 📋 |
+| Listeners on 443 / 23 off | `src/main.c` | TRANSPORT.md §6 | 📋 |
+
+### Acceptance Criteria
+```
+cargo-free host tests: crypto against RFC vectors, DZ1 round-trip, chunker edges
+dr1zzle-host pull securerom out.bin --verify   → digest matches dump digest
+sftp -P 443 operator@192.168.42.1              → get /nand.bin completes
+regs snapshot; induced fault; dump regs        → record survives the halt
+transport status                              → link named, counters, goodput
+```
+
+### Why this order
+The crypto block is first because it is the only part that can be finished and
+verified on a Mac with no device, no QEMU network device, and no A11. The
+container and chunker are second for the same reason. The TCP and link work
+is third because it needs a link to be meaningful, and the Wi-Fi backend is
+last because it is the one piece that needs hardware evidence this tree does
+not have.
+
+---
+
 ## Dependency Graph
 
 ```
@@ -313,10 +384,11 @@ Phase 7 (Host tool, CI, Docs) ← depends on all
 |------|----------|----------|
 | **M1: UART Shell** | `memdump 0x100000000 64` works | ✅ → Phase 2 |
 | **M2: TCP Shell** | `telnet` + `ping` + 100 cmds | 🔄 → Phase 3 |
-| **M3: Hardware Access** | `pmgr`, `gpio`, `i2c`, `spi` work | ⏳ → Phase 4 |
+| **M3: Hardware Access** | `pmgr`, `gpio`, `i2c`, `spi`, `wdog`, `irq` commands work | 🔄 → Phase 4 |
 | **M4: Storage + Crypto** | NAND dump + AES GID decrypt | ⏳ → Phase 5 |
 | **M5: Peripheral Dump** | ACE2 + SEP ping | ⏳ → Phase 6 |
 | **M7: Ship** | All commands + CI green | ⏳ → Ship |
+| **M8: Remote** | `pull securerom --verify` + `sftp -P 443` over USB | 📋 → Remote instrument |
 
 ---
 
@@ -358,6 +430,6 @@ Phase 7 (Host tool, CI, Docs) ← depends on all
 
 ---
 
-**Current Status:** Phase 1 Complete ✅ | Phase 2 In Progress 🔄
+**Current Status:** Phase 1 Complete ✅ | Phase 2 In Progress 🔄 | Phase 3 drivers implemented, unverified 🔄 | Phase 8 specified (SPEC v2.0) 📋
 
-**Next Action:** Implement CDC-ECM endpoint handlers + minimal TCP stack (ARP/ICMP/TCP)
+**Next Action:** Silicon verification of the Phase 3 blocks and the AIC line map, then Phase 2's CDC-ECM ↔ Ethernet wiring (ARP/TCP). That wiring is also the first item of Phase 8, and it unblocks both.

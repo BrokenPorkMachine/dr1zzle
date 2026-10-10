@@ -1,82 +1,62 @@
 #!/bin/sh
 set -eu
 
+cd "$(dirname "$0")/.."
+
 qemu_bin=${QEMU:-qemu-system-aarch64}
-image=${DR1ZZLE_ELF:-build/a11-payload.elf}
-machine=${DR1ZZLE_QEMU_MACHINE:-virt}
-cpu=${DR1ZZLE_QEMU_CPU:-cortex-a72}
-memory=${DR1ZZLE_QEMU_MEMORY:-8G}
-display=default
-serial=mon:stdio
+display_backend=${DR1ZZLE_QEMU_DISPLAY:-cocoa}
+mode=display
 build=1
 
 usage() {
-    echo "usage: $0 [--headless] [--display] [--no-build]"
-    echo "       QEMU=... DR1ZZLE_ELF=... DR1ZZLE_QEMU_MEMORY=... $0"
+    cat <<EOF
+usage: $0 [--display | --headless] [--no-build]
+
+  --display   show the monitor's framebuffer; UART stays in this terminal (default)
+  --headless  run the small UART-only profile
+  --no-build  use an existing profile image
+
+Environment: QEMU=... DR1ZZLE_QEMU_DISPLAY=...
+EOF
 }
 
-while [ $# -gt 0 ]; do
+while [ "$#" -gt 0 ]; do
     case "$1" in
-        --headless|-n)
-            display=none
-            ;;
-        --display|-d)
-            display=default
-            ;;
-        --no-build)
-            build=0
-            ;;
-        --help|-h)
-            usage
-            exit 0
-            ;;
-        *)
-            usage >&2
-            exit 2
-            ;;
+        --display|-d) mode=display ;;
+        --headless|-n) mode=headless ;;
+        --no-build) build=0 ;;
+        --help|-h) usage; exit 0 ;;
+        *) usage >&2; exit 2 ;;
     esac
     shift
 done
 
-if [ "$build" -eq 1 ]; then
-    make
-fi
-
-if [ ! -f "$image" ]; then
-    echo "missing QEMU image: $image" >&2
+if ! command -v "$qemu_bin" >/dev/null 2>&1; then
+    echo "QEMU not found: $qemu_bin" >&2
     exit 1
 fi
 
-cat <<EOF
-Launching dr1zzle/A11 payload in QEMU
-  image:   $image
-  machine: $machine
-  cpu:     $cpu
-  memory:  $memory
-  uart:    $serial
-  display: $display
+if [ "$mode" = display ]; then
+    profile=monitor
+else
+    profile=small
+fi
+image="build/profiles/$profile/monitor.elf"
 
-Note: this payload is linked for Apple A11 SRAM/MMIO. QEMU's generic virt board
-does not emulate S5L UART, USB PHY, DWC2, ACE2, or Apple memory-mapped devices.
-If UART is silent, the image is running against missing hardware, not your
-terminal being broken.
-EOF
-
-if [ "$display" = "none" ]; then
-    exec "$qemu_bin" \
-        -machine "$machine" \
-        -cpu "$cpu" \
-        -m "$memory" \
-        -nographic \
-        -serial "$serial" \
-        -kernel "$image"
+if [ "$build" -eq 1 ]; then
+    make -f boards/Makefile "PROFILE=$profile"
+fi
+if [ ! -f "$image" ]; then
+    echo "missing profile image: $image (run without --no-build)" >&2
+    exit 1
 fi
 
-exec "$qemu_bin" \
-    -machine "$machine" \
-    -cpu "$cpu" \
-    -m "$memory" \
-    -serial "$serial" \
-    -display "$display" \
-    -device ramfb \
-    -kernel "$image"
+echo "Starting dr1zzle ($profile profile); UART is in this terminal. Press Ctrl-C to quit."
+if [ "$mode" = headless ]; then
+    exec "$qemu_bin" -machine virt -cpu cortex-a53 -m 128M \
+        -display none -serial stdio -monitor none -kernel "$image"
+fi
+
+exec "$qemu_bin" -machine virt -cpu cortex-a53 -m 128M \
+    -device ramfb -display "$display_backend" \
+    -serial stdio -monitor none -kernel "$image"

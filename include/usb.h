@@ -3,7 +3,44 @@
 
 #include <stdint.h>
 
-void usb_init(void);
+#define USB_MAX_PACKET 512
+
+/* AIC line the AP side routes the DWC2 core to. pongoOS publishes this as
+ * the t8015 platform value "otg_irq = 324"; it is quoted here so the
+ * number lives in exactly one place, and because the payload can now let
+ * an operator move it at runtime (`irq map usb <n>`) if silicon disagrees.
+ * A wrong line costs an unclaimed IRQ, not a crash. */
+#define AIC_IRQ_USB_OTG 324
+
+int  usb_init(void);
 void usb_irq_handler(void);
 
-#endif
+/* Non-zero when the core has an unmasked condition waiting. */
+int  usb_irq_pending(void);
+
+/* Bulk OUT frames from the host (CDC-ECM). Implemented by the protocol
+ * layer, not the core. */
+void usb_cdc_rx(const uint8_t *data, uint16_t len);
+
+/* Hands buffered frames to the network stack. Main-loop only: the stack's
+ * segment buffers are statics, and the interrupt path must not reach them. */
+void usb_cdc_service(void);
+
+/* Called from the IN-complete path so the protocol layer can push queued
+ * frames. */
+void usb_cdc_tx_pending(void);
+
+void usb_send(const uint8_t *data, uint16_t len);
+
+uint16_t usb_device_address(void);
+int  usb_configured(void);
+
+/* Core register dump for bring-up debugging. */
+void usb_debug_dump(void);
+
+/* CDC-ECM protocol layer (cdc_ecm.c) */
+void usb_cdc_tx_queue(const uint8_t *data, uint16_t len);
+uint16_t usb_cdc_last_frame(uint8_t *out, uint16_t max);
+uint32_t usb_cdc_rx_dropped(void);
+
+#endif /* USB_H */

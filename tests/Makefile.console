@@ -1,0 +1,24 @@
+HOST_CC ?= cc
+CONSOLE_TEST_DIR ?= /tmp/dr1zzle-console-tests
+CONSOLE_FLAGS := -std=c11 -Wall -Wextra -Werror -fno-builtin -Iinclude -I.
+# Keep the freestanding stdio symbols from interposing on the host runtime.
+CONSOLE_FLAGS += -Dputchar=drizzle_test_putchar -Dputs=drizzle_test_puts
+
+.PHONY: test
+test:
+	mkdir -p $(CONSOLE_TEST_DIR)
+	$(HOST_CC) $(CONSOLE_FLAGS) -fsanitize=address,undefined -g \
+		lib/console.c kernel/display.c tests/console_display_test.c \
+		kernel/display_font.c kernel/display_memory.c \
+		-o $(CONSOLE_TEST_DIR)/console-display-test
+	$(CONSOLE_TEST_DIR)/console-display-test
+
+.PHONY: preview
+preview:
+	mkdir -p $(CONSOLE_TEST_DIR)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -I. \
+		-Dputchar=drizzle_test_putchar -Dputs=drizzle_test_puts \
+		lib/console.c kernel/display.c kernel/display_font.c \
+		kernel/display_memory.c tests/display_preview.c \
+		-o $(CONSOLE_TEST_DIR)/display-preview
+	$(CONSOLE_TEST_DIR)/display-preview $(CONSOLE_TEST_DIR)/display.ppm
