@@ -56,11 +56,14 @@ selection. The root default build targets the separate A11 `src/` tree; use the
 
 Every binding that varies between SoCs — register bases, IRQ lines, NAND
 geometry, the DFU placement bound — lives in one profile under `include/soc/`,
-selected by `make SOC=<name>`. Ten SoCs are checkm8-exploitable, all ten are
-recorded, and one (the A11) has the peripheral map needed to build an image:
-`make SOC=t8010` is refused with a message naming the profile rather than
-failing on a base that was never measured. The registry is checked against the
-two vendored files that define its geometry by `make soc-test`.
+selected by `make SOC=<name>`. Ten checkm8-exploitable SoCs and four newer
+A12/A12X/A12Z/A13 profiles are recorded, and one (the A11) has the peripheral
+map needed to build an image. Host-tier selections such as `make SOC=t8010`
+and `make SOC=t8020` are refused with a message naming the profile rather than
+failing on an address that was never measured, and `goat pwn` refuses a part
+checkm8 cannot reach before attempting the exploit. The registry is checked
+against the vendored sources by `make soc-test`; see [docs/SOCS.md](docs/SOCS.md) for
+the exploit-family and evidence boundaries.
 
 `scripts/run-qemu.sh` builds the portable monitor profile for QEMU. Its default
 mode mirrors text to a 640×240 display window while keeping UART input and

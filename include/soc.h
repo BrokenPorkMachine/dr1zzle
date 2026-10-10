@@ -20,13 +20,14 @@
  * boards/ profiles. A SoC that needs genuinely different *code* (not just
  * different addresses) should be a separate driver, not a profile.
  *
- * Every SoC this tree knows is one of the ten CPIDs checkm8 supports —
- * ipwndfu/README.md, "current SoC support". Each profile under include/soc/
- * defines the whole contract below, whether or not it has a peripheral map:
- * the registry, the host toolchain and the build selection all read the same
- * header, so a SoC is either fully described or explicitly marked as having no
- * register map. See docs/SOCS.md for the table and for what promotes a
- * profile between tiers.
+ * The original registry covered the ten CPIDs checkm8 supports. It now also
+ * records the newer T8020/T8021/T8027/T8030 identities, whose public USB
+ * tooling and register evidence are separate from checkm8. Each profile under
+ * include/soc/ defines the whole contract below, whether or not it has a
+ * peripheral map: the registry, the host toolchain and the build selection all
+ * read the same header, so a SoC is either fully described or explicitly
+ * marked as having no register map. See docs/SOCS.md for the table and for what
+ * promotes a profile between tiers.
  */
 
 /* ----------------------------------------------------------------------- */
@@ -120,10 +121,58 @@
 #define SOC_DFU_TRIGGER_LOOP    1
 
 /* ----------------------------------------------------------------------- */
+/* Which public exploit reaches this part                                  */
+/* ----------------------------------------------------------------------- */
+
+/* The registry started out as "the ten SoCs checkm8 covers", which made the
+ * exploit a property of the set rather than of a part. That stopped being true
+ * when a second, later bootrom bug was published (usbliter8) for parts checkm8
+ * never covered, so the mapping is now per-profile where it belongs.
+ *
+ * It is recorded here because the host tool needs it: `goat pwn` shells out to
+ * the vendored checkm8 tooling, and pointing that tool at an A12 does not fail
+ * in a way that explains itself. A profile that names its exploit lets the
+ * host say what is true instead.
+ *
+ * `SOC_EXPLOIT_NONE` is a real answer, not a gap: it records that no public
+ * exploit path is known to this tree for the part, which is what makes an
+ * A12X refuse cleanly rather than be attempted and fail. */
+#define SOC_EXPLOIT_NONE       0
+#define SOC_EXPLOIT_CHECKM8    1   /* ipwndfu, over a Mac's own USB stack */
+#define SOC_EXPLOIT_USBLITER8  2   /* needs an RP2350 as the USB host */
+
+/* ----------------------------------------------------------------------- */
+/* A field with no source in this tree                                     */
+/* ----------------------------------------------------------------------- */
+
+/* Not zero. Zero is a plausible-looking address, and a placement rule built on
+ * a base that was never measured is exactly the failure the registry exists to
+ * prevent, so "not recorded" has to be distinguishable from 0x0 at a glance. A
+ * profile that leaves a field the payload needs as this value is refused by the
+ * gate below rather than linked against it. */
+#define SOC_UNRECORDED         (~0ULL)
+
+/* ----------------------------------------------------------------------- */
 /* Selection                                                               */
 /* ----------------------------------------------------------------------- */
 
-#if defined(SOC_t8015)
+#if defined(SOC_t8030)
+#  define DR1ZZLE_SOC_PREFIX SOC_T8030
+#  define DR1ZZLE_SOC_NAME "t8030"
+#  include "soc/t8030.h"
+#elif defined(SOC_t8027)
+#  define DR1ZZLE_SOC_PREFIX SOC_T8027
+#  define DR1ZZLE_SOC_NAME "t8027"
+#  include "soc/t8027.h"
+#elif defined(SOC_t8021)
+#  define DR1ZZLE_SOC_PREFIX SOC_T8021
+#  define DR1ZZLE_SOC_NAME "t8021"
+#  include "soc/t8021.h"
+#elif defined(SOC_t8020)
+#  define DR1ZZLE_SOC_PREFIX SOC_T8020
+#  define DR1ZZLE_SOC_NAME "t8020"
+#  include "soc/t8020.h"
+#elif defined(SOC_t8015)
 #  define DR1ZZLE_SOC_PREFIX SOC_T8015
 #  define DR1ZZLE_SOC_NAME "t8015"
 #  include "soc/t8015.h"
@@ -178,6 +227,7 @@
 #define DR1ZZLE_SOC_ARCH     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _ARCH)
 #define DR1ZZLE_SOC_TIER     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _TIER)
 #define DR1ZZLE_SOC_BLOCKS   DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _MAPPED_BLOCKS)
+#define DR1ZZLE_SOC_EXPLOIT  DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _EXPLOIT)
 #define DR1ZZLE_SOC_TRIGGER \
     DR1ZZLE_CAT(DR1ZZLE_SOC_PREFIX, _DFU_TRIGGER)
 

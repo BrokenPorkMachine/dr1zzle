@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from goat import cli, container, kload, rsa  # noqa: E402
+from goat import cli, container, kload, pwn, rsa  # noqa: E402
 
 ARTIFACT_ELF = ROOT / "build" / "a11-payload.elf"
 
@@ -130,6 +130,23 @@ class TestSniff(unittest.TestCase):
         other = b"\x30\x03\x02\x01\x2a"
         self.assertEqual(kload.sniff(other), kload.KIND_RAW)
         self.assertEqual(kload.sniff(b"\x30\x80"), kload.KIND_RAW)
+
+
+class TestPwnPreflight(unittest.TestCase):
+    """CPID classification is host-only and must stay device-free."""
+
+    def test_cpid_parser_accepts_dfu_serial_and_rejects_malformed_values(self):
+        self.assertEqual(pwn._cpid_of("CPID:8015 CPRV:11"), 0x8015)
+        self.assertEqual(pwn._cpid_of("foo CPID:8020 PWND:[usbliter8]"),
+                         0x8020)
+        self.assertIsNone(pwn._cpid_of("CPID:not-hex"))
+        self.assertIsNone(pwn._cpid_of("no cpid here"))
+
+    def test_allow_lists_match_the_supported_paths(self):
+        self.assertIn(0x8015, pwn.CHECKM8_CPIDS)
+        self.assertNotIn(0x8020, pwn.CHECKM8_CPIDS)
+        self.assertEqual(pwn.USBLITER8_CPIDS, {0x8020, 0x8030})
+        self.assertNotIn(0x8027, pwn.USBLITER8_CPIDS)
 
 
 class TestElfParsing(unittest.TestCase):

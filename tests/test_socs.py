@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks the SoC registry against the sources that claim to define it.
 
-The registry is nine profiles under include/soc/. Everything in them either
+The original registry is nine checkm8 profiles under include/soc/; the current
+registry also carries newer host-only identities. Everything in them either
 came from somewhere citable or was reverse-engineered from silicon, and the
 only way to keep that honest is to fail when the two disagree:
 
@@ -41,6 +42,25 @@ PROFILES = [
     "t8011", "t8015",
 ]
 
+# Beyond checkm8: parts with a runnable usbliter8 handler, the second public
+# bootrom bug. These are host tier -- the exploit needs an RP2350 as the USB
+# host, and no peripheral map exists for them here -- but they are recorded
+# rather than ignored, so the host tool can say which exploit applies instead
+# of guessing.
+USBLITER8_PROFILES = ["t8020", "t8030"]
+
+# The source tree has handlers for A12 and A13. Its README explicitly says
+# A12X/A12Z are theoretical and not implemented, so keep that distinction in
+# the registry checks instead of treating a named bug as a runnable handler.
+USBLITER8_IMPLEMENTED_PROFILES = ["t8020", "t8030"]
+
+# Parts with no runnable exploit path in this tree. T8027 has measured partial
+# geometry but no handler; T8021 is an identity-only stub.
+NO_EXPLOIT_PROFILES = ["t8021", "t8027"]
+IDENTITY_STUB_PROFILES = ["t8021"]
+
+ALL_PROFILES = PROFILES + USBLITER8_PROFILES + NO_EXPLOIT_PROFILES
+
 # The contract. Each profile must define every one of these, or the drivers
 # that use them fail at the use site instead of here.
 FIELDS = {
@@ -67,6 +87,21 @@ PAYLOAD_ONLY = [
     "AOP_CFG_LOCK", "IORVBAR_0", "IORVBAR_1", "IORVBAR_2", "IORVBAR_3",
     "IORVBAR_4", "IORVBAR_5",
 ]
+
+EXPLOITS = {"checkm8": "SOC_EXPLOIT_CHECKM8",
+            "usbliter8": "SOC_EXPLOIT_USBLITER8",
+            "none": "SOC_EXPLOIT_NONE"}
+
+# Everything a profile can define, for the "a stub stays a stub" check.
+ALL_FIELDS = ([field for group in FIELDS.values() for field in group]
+              + ["EXPLOIT"])
+
+# Where usbliter8 lives on this machine. The tree is read, not copied: these
+# tests assert the registry agrees with it, exactly as the ones below assert
+# agreement with ipwndfu. A checkout that is not present makes those checks
+# skip rather than fail, because "no local reference" is not the same claim as
+# "the registry disagrees with the reference".
+USBLITER8 = Path.home() / "usbliter8-main"
 
 ARCHS = {
     "arm64": "SOC_ARCH_AARCH64",
@@ -212,7 +247,7 @@ class TestRegistry(unittest.TestCase):
                          "the registry should cover the checkm8 SoC list")
 
     def test_every_profile_defines_the_whole_contract(self):
-        for name in PROFILES:
+        for name in ALL_PROFILES:
             profile = parse_profile(name)
             missing = [field
                        for group in FIELDS.values() for field in group
@@ -221,23 +256,35 @@ class TestRegistry(unittest.TestCase):
                              "profile %s is missing %s" % (name, missing))
 
     def test_every_profile_has_a_tier(self):
-        for name in PROFILES:
+        for name in ALL_PROFILES:
             profile = parse_profile(name)
             self.assertIn(profile.get("TIER"), TIERS.values(),
                           "profile %s has an unknown tier" % name)
 
     def test_every_profile_declares_the_blocks_it_maps(self):
-        for name in PROFILES:
+        for name in ALL_PROFILES:
             profile = parse_profile(name)
             blocks = profile.get("MAPPED_BLOCKS", "")
-            # Every host-tier profile at least records ROM/SRAM/DRAM, and it
-            # says which: a mask that names nothing is a profile nobody read.
-            for block in ("SOC_BLK_ROM", "SOC_BLK_SRAM", "SOC_BLK_DRAM"):
-                self.assertIn(block, blocks,
-                              "profile %s should claim %s" % (name, block))
+            # Every profile at least records the ROM window, and it says
+            # which: a mask that names nothing is a profile nobody read. The
+            # one exception is an identity stub, which has no window to name
+            # and whose emptiness is the point -- see the stub check below.
+            if name not in IDENTITY_STUB_PROFILES:
+                for block in ("SOC_BLK_ROM",):
+                    self.assertIn(block, blocks,
+                                  "profile %s should claim %s"
+                                  % (name, block))
+            # The AArch64 checkm8 profiles record SRAM and DRAM too, from
+            # device_platform.py. The newer ones do not have those windows
+            # documented, so requiring them would be requiring an invention.
+            if name in PROFILES:
+                for block in ("SOC_BLK_SRAM", "SOC_BLK_DRAM"):
+                    self.assertIn(block, blocks,
+                                  "profile %s should claim %s"
+                                  % (name, block))
 
     def test_payload_tier_is_the_only_one_with_a_map(self):
-        for name in PROFILES:
+        for name in ALL_PROFILES:
             profile = parse_profile(name)
             if profile["TIER"] == TIERS["payload"]:
                 for block in PAYLOAD_BLOCKS:
@@ -254,7 +301,7 @@ class TestRegistry(unittest.TestCase):
                          "only the A11 profile should be payload tier today")
 
     def test_only_the_payload_tier_carries_peripheral_defines(self):
-        for name in PROFILES:
+        for name in ALL_PROFILES:
             profile = parse_profile(name)
             if profile["TIER"] == TIERS["host"]:
                 present = [f for f in PAYLOAD_ONLY if f in profile]
@@ -263,8 +310,108 @@ class TestRegistry(unittest.TestCase):
                                  "has no map for" % (name, present))
 
 
-class TestAgainstTheVendoredTable(unittest.TestCase):
-    """The geometry has to be the vendored tool's geometry."""
+class TestExploitMapping(unittest.TestCase):
+    """Which public exploit reaches a part, per profile.
+
+    The registry started as "the ten SoCs checkm8 covers", which made the
+    exploit a property of the set. A second bootrom bug (usbliter8) covers
+    parts checkm8 never did, so the mapping moved onto the profile where the
+    host tool can read it. These checks are what keep it from drifting back
+    into a set-level assumption.
+    """
+
+    def test_checkm8_profiles_name_checkm8(self):
+        for name in PROFILES:
+            profile = parse_profile(name)
+            self.assertEqual(profile["EXPLOIT"], "SOC_EXPLOIT_CHECKM8",
+                             "%s is in the checkm8 SoC list, so its exploit "
+                             "field should say checkm8" % name)
+
+    def test_every_profile_uses_a_known_exploit_value(self):
+        for name in ALL_PROFILES:
+            self.assertIn(parse_profile(name)["EXPLOIT"], EXPLOITS.values(),
+                          "%s has an unknown exploit value" % name)
+
+    def test_usbliter8_profiles_name_usbliter8(self):
+        """Every profile records the public exploit family that reaches it."""
+        for name in USBLITER8_PROFILES:
+            profile = parse_profile(name)
+            self.assertEqual(profile["EXPLOIT"], "SOC_EXPLOIT_USBLITER8",
+                             "%s should name usbliter8" % name)
+
+    def test_implemented_usbliter8_profiles_have_handlers(self):
+        """Cross-check runnable entries against usbliter8's CPID switch."""
+        if not USBLITER8.exists():
+            self.skipTest("usbliter8 tree not present at %s" % USBLITER8)
+        text = (USBLITER8 / "exploit.c").read_text()
+        for name in USBLITER8_IMPLEMENTED_PROFILES:
+            profile = parse_profile(name)
+            self.assertEqual(profile["EXPLOIT"], "SOC_EXPLOIT_USBLITER8",
+                             "%s should name usbliter8" % name)
+            cpid = "0x%04x" % as_int(profile["CPID"])
+            self.assertIn("case %s:" % cpid, text,
+                          "%s: usbliter8's exploit.c has no case for %s"
+                          % (name, cpid))
+
+    def test_checkm8_and_usbliter8_have_different_reach(self):
+        """The two bugs are not the same set, and the registry has to keep
+        them apart rather than picking one table for the whole family.
+
+        The A12 is where they diverge sharply: it is the first part checkm8
+        cannot reach AND the first usbliter8 can. If a future edit makes these
+        two sets overlap, this is the test that notices the family-level
+        shortcut being taken again."""
+        checkm8 = {parse_profile(n)["CPID"] for n in PROFILES}
+        usbliter8 = {parse_profile(n)["CPID"] for n in USBLITER8_PROFILES}
+        self.assertEqual(checkm8 & usbliter8, set(),
+                         "no part should be claimed by both exploits")
+
+    def test_the_a12_is_where_checkm8_stops(self):
+        """The exploit fields are load-bearing for the host tool's advice, so
+        the boundary is pinned rather than left to convention: the A11's
+        0x8015 remains checkm8-covered, while the first runnable usbliter8
+        profile is 0x8020."""
+        usbliter8 = [as_int(parse_profile(n)["CPID"])
+                     for n in USBLITER8_PROFILES]
+        checkm8 = {as_int(parse_profile(n)["CPID"]) for n in PROFILES}
+        self.assertIn(0x8015, checkm8)
+        self.assertNotIn(0x8020, checkm8)
+        self.assertIn(0x8020, usbliter8)
+
+    def test_parts_with_no_exploit_say_so(self):
+        for name in NO_EXPLOIT_PROFILES:
+            profile = parse_profile(name)
+            self.assertEqual(profile["EXPLOIT"], "SOC_EXPLOIT_NONE",
+                             "%s has no public exploit path in this tree, so "
+                             "its field should say NONE" % name)
+
+    def test_an_identity_stub_records_nothing_else(self):
+        """T8021 is a real part with no local source for its geometry. The
+        guard is that it stays that way until somebody finds one: a filled-in
+        field in a stub means a source that is not cited yet.
+
+        Identity and tier are the exception, and deliberately so -- a profile
+        that named nothing could not be selected, and a stub that was not
+        marked host tier would claim the map it does not have."""
+        identity = {"NAME", "CPID", "ARCH", "TIER", "MAPPED_BLOCKS", "EXPLOIT"}
+        for name in IDENTITY_STUB_PROFILES:
+            profile = parse_profile(name)
+            recorded = [field for field in ALL_FIELDS
+                        if field not in identity and field in profile and
+                        profile[field] != "SOC_UNRECORDED" and
+                        profile[field] != '""']
+            self.assertEqual(recorded, [],
+                             "%s is an identity stub; %s should not be "
+                             "recorded without a source" % (name, recorded))
+
+
+class TestVendoredTable(unittest.TestCase):
+    """Every profile the vendored table documents, cross-checked against it.
+
+    The A12/A13 profiles are not in device_platform.py -- those parts are
+    outside checkm8's reach -- so these checks iterate the checkm8 set only.
+    Their geometry is verified against usbliter8 below instead.
+    """
 
     def setUp(self):
         self.platforms = parse_device_platform()
@@ -396,6 +543,23 @@ class TestSelection(unittest.TestCase):
                             "an ARMv7 profile must not build an AArch64 image")
         self.assertIn("no peripheral register map for s5l8947x", result.stderr,
                       "the refusal should name the profile: %s" % result.stderr)
+
+    def test_every_host_profile_is_refused_and_named(self):
+        """The refusal contract applies to new identity and partial-map rows
+        too; none may accidentally fall through to a driver compile."""
+        for name in ALL_PROFILES:
+            profile = parse_profile(name)
+            if profile["TIER"] != TIERS["host"]:
+                continue
+            with self.subTest(profile=name):
+                result = self._compile(name)
+                self.assertNotEqual(result.returncode, 0,
+                                    "%s unexpectedly built" % name)
+                display_name = profile["NAME"].strip('"')
+                self.assertIn("no peripheral register map for " + display_name,
+                              result.stderr,
+                              "%s: refusal did not name the profile: %s"
+                              % (name, result.stderr))
 
 
 if __name__ == "__main__":

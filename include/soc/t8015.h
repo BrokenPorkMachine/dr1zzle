@@ -99,7 +99,7 @@
 /* ----------------------------------------------------------------------- */
 
 /* DWC2 OTG controller IRQ line on A11 (from apple,t8015-usb node). */
-#define SOC_T8015_IRQ_USB_OTG        324u
+#define SOC_T8015_IRQ_USB_OTG 324u
 
 /* ----------------------------------------------------------------------- */
 /* NAND geometry                                                           */
@@ -163,6 +163,8 @@
  * enter DFU in a loop instead of needing the button hold, which changes the
  * instructions the host prints and nothing in the payload. */
 #define SOC_T8015_DFU_TRIGGER        SOC_DFU_TRIGGER_LOOP
+
+#define SOC_T8015_EXPLOIT  SOC_EXPLOIT_CHECKM8
 
 /* ----------------------------------------------------------------------- */
 /* Peripheral IP bindings                                                  */
