@@ -4,9 +4,9 @@
 /*
  * S5L8947 SoC profile — 32-bit (ARMv7), host tier.
  *
- * This is one of the ten CPIDs checkm8 supports (ipwndfu/README.md, "current
+ * This is one of the ten CPIDs checkm8 supports (rpwn/rust/README.md, "current
  * SoC support"). Everything below the geometry block comes from
- * ipwndfu/device_platform.py, which is this tree's one vetted source for
+ * rpwn/rust/src/device_platform.rs, which is this tree's one vetted source for
  * platform geometry; nothing here was measured or inferred.
  *
  * There is no peripheral map. Two independent reasons, and both are fatal on

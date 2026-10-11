@@ -4,9 +4,9 @@
 /*
  * S5L8950 SoC profile — 32-bit (ARMv7s), host tier.
  *
- * One of the ten CPIDs checkm8 supports (ipwndfu/README.md, "current SoC
+ * One of the ten CPIDs checkm8 supports (rpwn/rust/README.md, "current SoC
  * support"). The geometry below is the whole of what this tree has for it:
- * ipwndfu/device_platform.py. No peripheral map exists here, and the ARMv7s
+ * rpwn/rust/src/device_platform.rs. No peripheral map exists here, and the ARMv7s
  * CPU is the first reason it could not be used if it did — see the note in
  * include/soc/s5l8947.h.
  */

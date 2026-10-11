@@ -3,7 +3,7 @@
  * The payload cannot be run on a Mac, so this drives the loader the way the
  * main loop does -- goatloader_poll() over a fake socket -- and asserts on
  * the bytes it produces. Worth doing because the protocol is the contract
- * with goat/cli.py: a reply that starts with "GOAT/1 ERR" where the host tool
+ * with the Rust Goat host boundary: a reply that starts with "GOAT/1 ERR" where the host tool
  * expects "GOAT/1 OK" fails as a failed push, not as a compile error.
  *
  * Builds with ASan/UBSan like the other host tests; see tests/test_phase4.py.

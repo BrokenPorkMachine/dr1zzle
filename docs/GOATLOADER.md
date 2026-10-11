@@ -7,7 +7,7 @@
 ```
 
 The address and the port are both pre-configured constants
-(`include/net.h`, `include/goat/loader.h`), and `goat/cli.py` defaults to the
+(`include/net.h`, `include/goat/loader.h`), and the Rust Goat tooling uses the
 same two numbers. Nothing is negotiated: there is no DHCP client on this link,
 so the two sides agree by construction and a remote side does not need to be
 told anything.
@@ -54,8 +54,7 @@ would look at.
 stack answers ARP for the address from the first frame rather than after
 something asks.
 
-`tests/test_goatloader.py` reads the constant and `goat/cli.py`'s default and
-fails when they drift, because nothing else in the build would notice.
+The Rust Goat command boundary owns the host-side command contract.
 
 ## The protocol
 
@@ -131,8 +130,7 @@ lets it use static segment buffers.
 ## Testing
 
 - `make loader-test` — the protocol state machine on the host, driven through
-  `goatloader_poll()` against a fake socket, plus the device/host agreement
-  checks.
+  `goatloader_poll()` against a fake socket.
 - `python3 tests/test_hw.py` — bring-up ordering: the address is configured,
   the listener is bound before the shell, and the port still matches the host
   tool.
@@ -150,4 +148,4 @@ silicon, and `docs/TASK_STATUS.md` says so.
 | `include/net.h`, `src/net/tcp.c` | the pre-configured static address |
 | `src/drivers/cdc_ecm.c` | frame assembly and the transmit queue |
 | `src/shell/shell.c` | `shell_exec()`, the `server` command, the idle loop |
-| `goat/cli.py` | the host side: `goat push`, `goat install`, `goat shell` |
+| `goat-rust/` | the Rust host-side Goat command boundary |

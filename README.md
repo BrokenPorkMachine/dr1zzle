@@ -56,6 +56,12 @@ make phase4-test   # host-test AES, APFS, and KBAG primitives
 - `src/` — the A11 payload tree: drivers, shell, research modules
 - `SPEC.md` — master specification (v2.0), including dumps, snapshots and SSH/SCP
 
+Getting a device into pwndfu state is `goat pwn`'s job, and it now runs this
+tree's own Rust driver: `goat/goat pwn` invokes `rpwn -p`, and the exploit's
+measured constants and its open frontier are recorded in
+[docs/CHECKM8_IMPLEMENTATION.md](docs/CHECKM8_IMPLEMENTATION.md). The legacy
+Python exploit tooling is no longer vendored here; `rpwn/` is its replacement.
+
 See [hardware profiles](docs/HARDWARE_PROFILES.md) for memory budgets and build
 selection. The root default build targets the separate A11 `src/` tree; use the
 `profiles` targets above for the portable monitor.
@@ -127,6 +133,24 @@ for the register convention and the toggles (`--no-pwn`, `--no-run`,
 (fixed panel, output pane below it, pinned status line — see
 [docs/MENU.md](docs/MENU.md)) and takes input on the serial console.
 
+## RP2350 helper-board workflow
+
+Goat also carries the four `usbr34ker` UF2 images and provides a guided flash
+and UART path for the RP2350 helper board. This path is intentionally separate
+from the Apple A11 `kload` loader:
+
+```sh
+./goat/goat usbr34ker                 # guided flash + CDC UART terminal
+./goat/goat usbr34ker walkthrough     # same guided flow
+./goat/goat usbr34ker list
+./goat/goat usbr34ker flash --board pico2
+```
+
+The terminal opens the detected USB modem at 115200 8-N-1; Ctrl-] exits. Use
+`--mount /Volumes/RPI-RP2` when the boot volume is not found automatically.
+See [goat/USBR34KER_GOAT.md](goat/USBR34KER_GOAT.md) for the complete live
+walkthrough and the handoff back to `goat kload`.
+
 See [dumps and snapshots](docs/DUMP_WIRE_FORMAT.md) for the byte-level formats,
 [SSH/SCP on 443](docs/SSH_SCP_443.md) for the remote-access protocol, and
 [transport](docs/TRANSPORT.md) for link selection and the streaming scheduler.
@@ -166,10 +190,10 @@ the address and the port are pre-configured on both sides, so a remote
 connection needs no setup:
 
 ```sh
-python3 goat/cli.py push payload.g1 --key-hex ...           # stage a sealed container
-python3 goat/cli.py push payload.g1 --key-hex ... --run     # stage and hand over
-python3 goat/cli.py install payload.g1 --slot 1 --key-hex ...  # seal into a NAND slot
-python3 goat/cli.py shell                                   # monitor console over TCP
+./goat/goat push payload.g1 --key-hex ...           # stage a sealed container
+./goat/goat push payload.g1 --key-hex ... --run     # stage and hand over
+./goat/goat install payload.g1 --slot 1 --key-hex ...  # stage into a NAND slot
+./goat/goat shell                                   # monitor console over TCP
 ```
 
 The listener is bound during bring-up, before the shell starts, and there is no

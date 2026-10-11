@@ -4,8 +4,8 @@
 /*
  * T8004 SoC profile — 32-bit (ARMv7k), host tier.
  *
- * The last of the ten CPIDs checkm8 supports (ipwndfu/README.md, "current SoC
- * support"). Geometry from ipwndfu/device_platform.py; no peripheral map, and
+ * The last of the ten CPIDs checkm8 supports (rpwn/rust/README.md, "current SoC
+ * support"). Geometry from rpwn/rust/src/device_platform.rs; no peripheral map, and
  * an ARMv7k CPU — see include/soc/s5l8947.h.
  *
  * Two things about this part are worth knowing before anyone writes a profile

@@ -14,7 +14,7 @@ between SoCs lives in one per-SoC header under `include/soc/`, and
 
 ## What is in it
 
-The registry contains the ten CPIDs checkm8 supports — `ipwndfu/README.md`,
+The registry contains the ten CPIDs checkm8 supports — `rpwn/rust/README.md`,
 "current SoC support" — plus the newer T8020/T8021/T8027/T8030 identities
 named by the usbliter8 reference tree. The latter are host-only records: this
 repository does not build or run their device-side code. S5L8960 covers both
@@ -72,7 +72,7 @@ about it:
 rather than letting a driver fail on a base that was never measured.
 
 That is not a judgement about the Silicon, it is a statement about this tree:
-every base listed above came from `ipwndfu/device_platform.py`, which
+every base listed above came from `rpwn/rust/src/device_platform.rs`, which
 documents ROM, SRAM, DRAM and DFU geometry and nothing else. A payload needs a
 console, and a console needs a register base, so a geometry-only profile
 cannot become an image.
@@ -175,14 +175,12 @@ per part, where a source establishes them.
 | t8027 (A12Z) | unrecorded | 0x23B080600 |
 | t8030 (A13) | unrecorded | 0x23B080C00 |
 
-The A11 control window is the strongest-sourced address in this registry and it
-was missing entirely: `DeviceTree.d22ap`'s `/arm-io/sep` node gives
+The A11 SEP control window is the strongest-sourced address in this registry:
+`DeviceTree.d22ap`'s `/arm-io/sep` node gives
 `reg = 0x43000000 + 0x1000` with the `aarch64` flag present on `sep` and on
-nothing else. That is the first A11 SEP address the reference project
-established, and unlike the mailbox base below it is read out of a device tree
-rather than carried forward as a default. A payload that puts an OS on the
-enclave needs this window; without it the AP has no way to address the SEP's
-own control registers.
+nothing else. Combined with the recorded `gIOBase`, this resolves the SEP
+control node at `0x243000000`; it does not by itself resolve the mailbox
+resource base or authorize AP writes into protected SEP RAM.
 
 The SEP power word is the other half. It is the PMGR `ps-reg` entry that gates
 whether the enclave is powered, and it is the word each part's SecureROM polls
@@ -191,14 +189,15 @@ clearest demonstration that per-part records matter: the A12 and A12Z use
 `+0x600`, the A13 uses `+0xc00` in the same plane, and the reference tree is
 explicit that copying the A12's word onto the A13 would be wrong.
 
-One thing this fixes about the A11 specifically: the only SEP-facing constant
-the tree had was `SOC_T8015_MAILBOX_BASE = 0x23C000000`, and
-`src/research/sepos.c` builds its entire mailbox client on it. The reference
-project is explicit that no device tree holds that value, that no SecureROM
-literal names it, and that it was "deliberately left as the legacy value rather
-than guessed". So the SEP mailbox path in this tree rests on an address nobody
-has established. The profile now says so at the point of definition, so the
-assumption is visible where it is used rather than buried in a driver.
+The A11 AP SecureROM also contains the 8-byte literal `0x243000000` at file
+offset `0x1c190`, in a SEP-mail descriptor table. That establishes an
+AP-visible aperture base, not FIFO offsets. The independent mailbox census
+records accesses in the `0x243008000` window. PongoOS's A11-specific source
+derives its mailbox structures from the SEP DeviceTree register and places
+control registers at `+0x8100` and message FIFOs at `+0x8800`/`+0x8830`.
+These are useful cross-checks, but the project has not captured a complete
+hardware request/reply exchange. The old `0x23C000000` value remains
+unestablished for A11 and must not be used as a measured base.
 
 ## Promoting a profile
 
@@ -217,7 +216,7 @@ and a new `#elif` in `include/soc.h`, not a driver edit.
 
 ## What is not here
 
-`ipwndfu/README.md` lists a "future SoC support" line: s5l8940x, s5l8942x,
+`rpwn/rust/README.md` lists a "future SoC support" line: s5l8940x, s5l8942x,
 s5l8945x, s5l8747x, t7000, t7001, s7002, s8000, s8001, s8003, t8012. Those have
 no entry in `device_platform.py`, so there is no geometry to record and no
 profile was written for them. t8016 — the other A11 CPID, in the iPhone 8 Plus
@@ -246,14 +245,14 @@ that are supposed to be authoritative for it:
   from the ones the tree was built against;
 - exploit-family fields agree with the checkm8 and usbliter8 reference trees,
   while the T8021 stub is prevented from acquiring unsourced geometry;
-- the geometry in each profile matches `ipwndfu/device_platform.py`, so a
+- the geometry in each profile matches `rpwn/rust/src/device_platform.rs`, so a
   transcription error in either direction fails the test rather than a device;
 - each part's PMGR band contains its own SEP power word — the check that
   caught the A12's wrong `0x20e000000` PMGR, and the reason a profile that is
   self-consistent can still be caught being wrong;
 - the SEP fields are carried exactly where a source establishes them, per field
   rather than per profile, so "unrecorded" cannot quietly become zero;
-- the DFU trigger matches `ipwndfu/checkm8.py`'s per-CPID device configuration;
+- the DFU trigger matches `rpwn/rust/src/checkm8.rs`'s per-CPID device configuration;
 - exactly one profile is payload tier, and it maps every block in
   `SOC_BLK_PAYLOAD`;
 - `make SOC=<name>` compiles for the payload tier and is refused, with the

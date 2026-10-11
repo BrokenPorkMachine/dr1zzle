@@ -288,7 +288,7 @@ static void execute(char *line) {
         uart_puts("    apfs scan                   - locate APFS container and volume\n");
         uart_puts("    aes <cbc|ecb> <enc|dec> <128|192|256> <uid|gid0|gid1|iv+key> <data>\n");
         uart_puts("    keybag <img4_file>          - decrypt KBAG\n");
-        uart_puts("    sepos <ping|random|boot_tz0|status|memdump> - SEP commands\n");
+        uart_puts("    sepos <ping|random|boot_tz0|send_sepos|send_art|status|memdump> - SEP commands\n");
         uart_puts("    ace2 <init|dump|port n reset|enable|status> - ACE2/ACE3\n");
         uart_puts("    tz <info|lockdown|blackbird|tz0_set> - TrustZone TZ0/TZ1\n");
         uart_puts("    recfg <dump|sync|lock>      - recfg sequences\n");
@@ -969,14 +969,43 @@ static void execute(char *line) {
         }
     }
     else if (strcmp(argv[0], "sepos") == 0) {
-        if (argc < 2) { uart_puts("Usage: sepos <ping|random|boot_tz0|status|memdump>\n"); return; }
+        if (argc < 2) {
+            uart_puts("Usage: sepos <ping|random|boot_tz0|send_sepos|send_art|irq|status|memdump>\n");
+            uart_puts("  send_sepos <phys> [size [entry]] - tell SEPROM to load SEPOS from page\n");
+            uart_puts("  send_art   <phys> [size]         - tell SEPROM to load ART from page\n");
+            uart_puts("  irq                              - enable the inbox-not-empty interrupt\n");
+            return;
+        }
         if (strcmp(argv[1], "ping") == 0) {
-            if (sep_send_command(0xFF, 0, 0) == 0) uart_puts("SEP ping OK\n");
+            if (sepos_ping() == SEP_OK) uart_puts("SEP ping OK\n");
             else uart_puts("SEP ping failed\n");
         } else if (strcmp(argv[1], "random") == 0) {
-            sep_send_command(0x10, 0, 0);
+            sepos_get_random();
         } else if (strcmp(argv[1], "boot_tz0") == 0) {
-            sep_send_command(0x05, 0, 0);
+            if (sepos_boot_tz0() == SEP_OK) uart_puts("TZ0 boot command sent\n");
+            else uart_puts("TZ0 boot failed\n");
+        } else if (strcmp(argv[1], "send_sepos") == 0) {
+            if (argc < 3) { uart_puts("Usage: sepos send_sepos <phys> [size [entry]]\n"); return; }
+            uint64_t base = parse_hex(argv[2]);
+            uint32_t size = (argc >= 4) ? parse_hex(argv[3]) : 0;
+            uint64_t entry = (argc >= 5) ? parse_hex(argv[4]) : 0;
+            if (sepos_send_sepos(base, size, entry) == SEP_OK) {
+                uart_puts("SEPOS load command sent\n");
+            } else {
+                uart_puts("SEPOS send failed\n");
+            }
+        } else if (strcmp(argv[1], "send_art") == 0) {
+            if (argc < 3) { uart_puts("Usage: sepos send_art <phys> [size]\n"); return; }
+            uint64_t base = parse_hex(argv[2]);
+            uint32_t size = (argc >= 4) ? parse_hex(argv[3]) : 0;
+            if (sepos_send_art(base, size) == SEP_OK) {
+                uart_puts("ART load command sent\n");
+            } else {
+                uart_puts("ART send failed\n");
+            }
+        } else if (strcmp(argv[1], "irq") == 0) {
+            if (sepos_enable_irq() == SEP_OK) uart_puts("SEP inbox interrupt enabled\n");
+            else uart_puts("SEP irq enable failed\n");
         } else if (strcmp(argv[1], "status") == 0) {
             sepos_status();
         } else if (strcmp(argv[1], "memdump") == 0) {

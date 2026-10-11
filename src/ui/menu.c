@@ -66,7 +66,7 @@ static const char *const MENU_LINES[] = {
 #define PANEL_END (2u + (uint32_t)MENU_LINE_COUNT)
 
 #define MENU_STATUS_DEFAULT \
-    "dr1zzle OpenSEP  -  serial console  -  help for all commands"
+    "dr1zzle OpenEyeBoot  -  serial console  -  help for all commands"
 
 /* --- state --------------------------------------------------------------- */
 

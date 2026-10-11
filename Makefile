@@ -2,7 +2,7 @@
 # Target: Apple A11 (T8015) - iPhone 8/X
 
 ARCH := aarch64
-CROSS_COMPILE ?= aarch64-none-elf-
+CROSS_COMPILE ?= aarch64-elf-
 GNU_CC := $(shell command -v $(CROSS_COMPILE)gcc 2>/dev/null)
 LLVM_OBJCOPY := $(shell command -v llvm-objcopy 2>/dev/null || test ! -x /opt/homebrew/opt/llvm/bin/llvm-objcopy || echo /opt/homebrew/opt/llvm/bin/llvm-objcopy)
 HOST_CC ?= cc
@@ -64,6 +64,7 @@ C_SRCS := \
 	$(SRC_DIR)/drivers/nand_export.c \
 	$(SRC_DIR)/drivers/recfg.c \
 	$(SRC_DIR)/drivers/recfg_soc.c \
+	$(SRC_DIR)/drivers/sep.c \
 	$(SRC_DIR)/drivers/tz.c \
 	$(SRC_DIR)/ui/dashboard.c \
 	$(SRC_DIR)/ui/menu.c \
@@ -181,6 +182,12 @@ ASMFLAGS := -I$(INC_DIR) -I$(SRC_DIR)/arch/arm64
 
 LDFLAGS := -nostdlib -nodefaultlibs -Wl,-T,$(LDSCRIPT) -Wl,-Map,$(BUILD_DIR)/$(TARGET).map
 FW_LDFLAGS := -nostdlib -nodefaultlibs -Wl,-T,$(FW_LDSCRIPT) -Wl,-Map,$(BUILD_DIR)/$(FW_TARGET).map
+
+# Use lld for clang bare-metal targets (avoids ld64 confusion)
+ifeq ($(GNU_CC),)
+LDFLAGS += -fuse-ld=lld
+FW_LDFLAGS += -fuse-ld=lld
+endif
 
 SIZE_CFLAGS := $(CFLAGS) -Os
 
@@ -393,7 +400,7 @@ size: $(BUILD_DIR)/$(TARGET).elf
 
 # Portable, budget-enforced QEMU hardware profiles (separate from A11 payload).
 PROFILE ?= small
-.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test ipwndfu-test menu-test soc-test
+.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test sep-test soc-test rpwn-test menu-test
 profiles:
 	$(MAKE) -f boards/Makefile PROFILE=$(PROFILE)
 profiles-test:
@@ -414,20 +421,25 @@ phase4-test:
 	python3 tests/test_phase4.py
 
 goat-test:
-	python3 tests/goat_test.py
+	cargo test --locked --manifest-path goat-rust/Cargo.toml
 
 loader-test:
-	python3 tests/test_goatloader.py
+	cargo test --locked --manifest-path goat-rust/Cargo.toml
+
+# The SEP work: the mailbox protocol against pongoOS and captured traces, and
+# the shell-wrapper layer that owns the static driver instance.
+sep-test:
+	python3 tests/test_sep.py
+	python3 tests/test_sepos_wrappers.py
 
 # The SoC registry is checked against the vendored checkm8 sources and, when
 # present, the local usbliter8 reference. No device is involved.
 soc-test:
 	python3 tests/test_socs.py
 
-# The vendored checkm8 tree (ipwndfu/) runs under Python 3 now that no
-# current macOS ships a Python 2. These keep it that way.
-ipwndfu-test:
-	python3 tests/test_ipwndfu.py
+# RPWN is the Rust-native DFU driver; keep its byte-level suite in the host checks.
+rpwn-test:
+	cargo test --locked --manifest-path rpwn/rust/Cargo.toml
 
 # Host test for the on-screen menu: panel/pane layout and bounded scrolling.
 menu-test:

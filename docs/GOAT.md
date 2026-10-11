@@ -79,16 +79,30 @@ region is dropped by the payload's own entry.
 
 ## Exploiting
 
+`goat pwn` runs this tree's Rust driver, `rpwn -p`
+(`rpwn/rust/`), which is the replacement for the legacy Python tool that used
+to be vendored here. The exploit it runs is an original implementation of the
+published analysis of the checkm8 bug, with constants measured per build from
+the SecureROM images in the corpus; the record of what is measured, what is
+not, and the one thing that needs hardware is
+[docs/CHECKM8_IMPLEMENTATION.md](CHECKM8_IMPLEMENTATION.md).
+
+`rpwn -p` prints the plan for the attached device first — part, build, stages,
+blockers — and refuses a part the bug cannot reach rather than failing on the
+device. `RPWN_CHECKM8_DRY_RUN=1` stops the run at the last measured stage,
+which is the mode a first hardware run should use while collecting transport
+observations.
+
 `kload` runs checkm8 itself when the device is in DFU but not yet exploited,
 because that is one user-visible action ("put this image on my device"), not
-two. The exploit is still the one delegated step — `goat/kload.py` contains no
-exploit logic, it only calls the same `checkm8` entry point `goat pwn` uses,
-which shells out to the vendored `ipwndfu` (Python 2). Turn it off with
-`--no-pwn`; then a device that is not pwndfu is an error, and the message says
+two. The exploit is still the one delegated step — the Rust Goat command
+boundary calls the Rust-native `rpwn` implementation used by `goat pwn`. Pass `--no-pwn` to
+require an already-pwndfu device; a device that is not pwndfu is then an error,
+and the message says
 to run `goat pwn`.
 
 ```
-brew install python@2     # or apt install python2 -- what auto-pwn needs
+cargo build --release --manifest-path rpwn/rust/Cargo.toml --locked
 ```
 
 ## Practical modes
@@ -118,13 +132,13 @@ available from the host, and it is why the payload prints its bring-up on UART.
 
 Nothing here has been run on an A11. The transfer path (control-transfer
 sequence, command framing, `memcpy`/`memset`/`exec` opcodes, and the
-`SRTG`-dependent load base) is the same one the vendored `ipwndfu` documents;
+`SRTG`-dependent load base) is pinned by the Rust RPWN profile table;
 the A11 addresses (`0x180000000` SRAM, the entry at `+0x1000`) come from this
 tree's linker script and `include/memory_map.h`.
 
 ## Tests
 
-`make goat-test` runs `tests/goat_test.py`: image sniffing and ELF parsing,
+`make goat-test` runs the Rust Goat tests: container parsing, signature checks,
 placement and window rejection, the container paths (plain, wrapped, staged,
 tampered), and the device-side flow against a stub that records every write,
 every readback, the register order of the jump, and the handoff poll.

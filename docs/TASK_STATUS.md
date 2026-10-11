@@ -20,7 +20,7 @@ timer's masked interrupt output, the F-stays-masked boot exit, and the
 
 | Task | Status | Evidence |
 | --- | --- | --- |
-| Goatloader TCP server (port 1234, always on) | Implemented, silicon unverified | `src/goat/loader.c` binds at bring-up; `tests/test_goatloader.py` drives the protocol on the host and pins the address/port against `goat/cli.py`. See [GOATLOADER.md](GOATLOADER.md). |
+| Goatloader TCP server (port 1234, always on) | Implemented, silicon unverified | `src/goat/loader.c` binds at bring-up; the protocol contract is documented in [GOATLOADER.md](GOATLOADER.md). |
 | Pre-configured static IPv4 | Implemented, silicon unverified | `NET_DEFAULT_IPV4` 192.168.42.1/24 (`include/net.h`), installed by `net_configure_static()` in `c_main`; the host tool's default is asserted equal to it. |
 | CDC-ECM RX wired to the stack | Implemented, silicon unverified | `cdc_ecm.c` assembles frames (short-packet boundary) and `net_poll()` delivers them; frames were previously received and dropped. |
 | Vector table + EL1h entry | Complete | 16 slots x 0x80 = 0x800, 2KB aligned. `tests/test_hw.py::TestVectorTable` (5 tests) checks geometry, B-encoding, and that every branch target lands inside `.text`. |

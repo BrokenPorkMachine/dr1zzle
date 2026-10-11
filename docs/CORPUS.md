@@ -4,10 +4,9 @@
 into a directory with a self-describing manifest.
 
 ```
-python3 goat/goat pull --list-targets
-python3 goat/goat pwn                 # checkm8 into pwndfu state
-python3 goat/goat pull --outdir corpus/<host>-<date>
-python3 goat/goat pull securerom dfu-state --skip-unverified
+./goat/goat pwn                       # checkm8 into pwndfu state
+rpwn --dump=0x100000000,0x100000 corpus/securerom.bin
+rpwn --dump=0x18001C000,0x40000 corpus/dfu-state.bin
 ```
 
 ## What it captures
@@ -36,7 +35,7 @@ python3 goat/goat pull securerom dfu-state --skip-unverified
 
 Addresses come from two places, recorded per target in `manifest.json`:
 
-- `ipwndfu/device_platform.py` — the vendored tool's own t8015 platform entry
+- `rpwn/rust/src/device_platform.rs` — the vendored tool's own t8015 platform entry
   (`rom_base`, `rom_size`, `sram_base`, `sram_size`, `dram_base`,
   `dfu_image_base`).
 - `include/memory_map.h` — the A11 map in this tree, for the SEP mailbox
@@ -49,7 +48,7 @@ Targets that rely on a base address but not a documented extent (`iboot`,
 ## Self-verification
 
 The A11 SecureROM SHA-1 is published and pinned in
-`ipwndfu/device_platform.py`. `pull` captures `securerom` first and compares
+`rpwn/rust/src/device_platform.rs`. `pull` captures `securerom` first and compares
 the result:
 
 - **Match** — the DFU transport, read path, file write and hashing are all

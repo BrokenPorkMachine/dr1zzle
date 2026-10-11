@@ -9,7 +9,7 @@
  * setup are the ones this tree already speaks. It cannot take one yet, because
  * this tree has no peripheral map for it.
  *
- * What is here is the geometry, from ipwndfu/device_platform.py: ROM, SRAM,
+ * What is here is the geometry, from rpwn/rust/src/device_platform.rs: ROM, SRAM,
  * DRAM, DFU placement, the demotion register and the published SecureROM
  * SHA-1. That is enough for the host side to be *correct* — `goat pwn`
  * exploits this CPID today, `goat pull securerom` reads the right window and
