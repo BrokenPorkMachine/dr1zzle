@@ -56,6 +56,12 @@ make phase4-test   # host-test AES, APFS, and KBAG primitives
 - `src/` — the A11 payload tree: drivers, shell, research modules
 - `SPEC.md` — master specification (v2.0), including dumps, snapshots and SSH/SCP
 
+Getting a device into pwndfu state is `goat pwn`'s job, and it now runs this
+tree's own Rust driver: `goat/goat pwn` invokes `rpwn -p`, and the exploit's
+measured constants and its open frontier are recorded in
+[docs/CHECKM8_IMPLEMENTATION.md](docs/CHECKM8_IMPLEMENTATION.md). The legacy
+Python exploit tooling is no longer vendored here; `rpwn/` is its replacement.
+
 See [hardware profiles](docs/HARDWARE_PROFILES.md) for memory budgets and build
 selection. The root default build targets the separate A11 `src/` tree; use the
 `profiles` targets above for the portable monitor.

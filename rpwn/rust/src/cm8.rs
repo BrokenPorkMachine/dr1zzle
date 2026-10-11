@@ -206,9 +206,16 @@ fn upload_payload<'a>(device: &Device, plan: &mut Plan<'a>) -> Result<(), Error>
         plan.payload = Some(build_payload(plan.profile).map_err(Error::Unreachable)?);
     }
     let data = plan.payload.as_ref().expect("payload");
-    let mut block = 0u16;
-    for chunk in data.chunks(MAX_BLOCK as usize) {
-        let rc = libusb::ctrl_out(device, 0x21, DFU_DNLOAD, block, 0, chunk, CMD_TIMEOUT);
+    for (block, chunk) in data.chunks(MAX_BLOCK as usize).enumerate() {
+        let rc = libusb::ctrl_out(
+            device,
+            0x21,
+            DFU_DNLOAD,
+            block as u16,
+            0,
+            chunk,
+            CMD_TIMEOUT,
+        );
         if rc < 0 {
             return Err(Error::Transport(format!(
                 "DNLOAD block {block} failed: {}",
@@ -217,7 +224,6 @@ fn upload_payload<'a>(device: &Device, plan: &mut Plan<'a>) -> Result<(), Error>
         }
         let _ = libusb::ctrl_in(device, 0xA1, DFU_GETSTATUS, 0, 0, 6, CMD_TIMEOUT);
         let _ = libusb::ctrl_in(device, 0xA1, DFU_GETSTATE, 0, 0, 1, CMD_TIMEOUT);
-        block += 1;
     }
     Ok(())
 }

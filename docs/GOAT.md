@@ -79,6 +79,20 @@ region is dropped by the payload's own entry.
 
 ## Exploiting
 
+`goat pwn` runs this tree's Rust driver, `rpwn -p`
+(`rpwn/rust/`), which is the replacement for the legacy Python tool that used
+to be vendored here. The exploit it runs is an original implementation of the
+published analysis of the checkm8 bug, with constants measured per build from
+the SecureROM images in the corpus; the record of what is measured, what is
+not, and the one thing that needs hardware is
+[docs/CHECKM8_IMPLEMENTATION.md](CHECKM8_IMPLEMENTATION.md).
+
+`rpwn -p` prints the plan for the attached device first — part, build, stages,
+blockers — and refuses a part the bug cannot reach rather than failing on the
+device. `RPWN_CHECKM8_DRY_RUN=1` stops the run at the last measured stage,
+which is the mode a first hardware run should use while collecting transport
+observations.
+
 `kload` runs checkm8 itself when the device is in DFU but not yet exploited,
 because that is one user-visible action ("put this image on my device"), not
 two. The exploit is still the one delegated step — the Rust Goat command

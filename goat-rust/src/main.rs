@@ -132,15 +132,40 @@ fn flash(board: &str, dir: &Path, mount: &Path, wait: f64) -> io::Result<()> {
     thread::sleep(Duration::from_secs_f64(wait.max(0.0)));
     Ok(())
 }
+/// Find the RPWN binary: the two environment overrides, then the in-tree
+/// release build, then the name on PATH. The in-tree candidate is what a fresh
+/// checkout has after `cargo build --release --manifest-path rpwn/rust/Cargo.toml`,
+/// so the usual case does not need the override at all.
+fn rpwn_binary() -> PathBuf {
+    for key in ["GOAT_RPWN", "RPWN"] {
+        if let Some(value) = env::var_os(key) {
+            return PathBuf::from(value);
+        }
+    }
+    // The in-tree release build is four levels up from the binary
+    // (<root>/goat-rust/target/release/goat -> <root>), so the usual case
+    // needs neither an override nor a PATH entry.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(root) = exe.ancestors().nth(4) {
+            let candidate = root.join("rpwn/rust/target/release/rpwn");
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from("rpwn")
+}
+
 fn rpwn() -> io::Result<ExitCode> {
-    let bin = env::var_os("GOAT_RPWN")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("RPWN").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("rpwn"));
-    let status = Command::new(&bin)
-        .arg("-p")
-        .status()
-        .map_err(|e| err(format!("cannot run RPWN {}: {e}", bin.display())))?;
+    let bin = rpwn_binary();
+    let status = Command::new(&bin).arg("-p").status().map_err(|e| {
+        err(format!(
+            "cannot run RPWN {}: {e}\nbuild it with: cargo build --release \
+             --manifest-path rpwn/rust/Cargo.toml --locked\nor set GOAT_RPWN \
+             to an installed rpwn",
+            bin.display()
+        ))
+    })?;
     Ok(status
         .code()
         .and_then(|c| u8::try_from(c).ok())
