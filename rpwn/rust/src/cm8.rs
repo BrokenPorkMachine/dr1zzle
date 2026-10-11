@@ -252,11 +252,6 @@ pub fn acquire(serial_match: Option<&str>) -> Result<Device, Error> {
         .ok_or_else(|| Error::Transport("no Apple device in DFU mode (05ac:1227)".to_string()))
 }
 
-/// Is this device already pwndfu?
-pub fn is_pwndfu(device: &Device) -> bool {
-    device.serial_number.contains("PWND:[checkm8]")
-}
-
 /// `-p` for a part with a measured profile: print the plan, run it, report.
 ///
 /// Same shape as the port's `exploit()` so the two are interchangeable from
@@ -282,18 +277,20 @@ pub fn exploit() {
         println!("{}", line);
     }
 
-    let device = match acquire(Some(PWND_SERIAL_MARKER)) {
+    let device = match acquire(None) {
         Ok(device) => device,
         Err(reason) => die_line(&format!("ERROR: {reason}")),
     };
+    let attached_serial = device.serial_number.clone();
     match run(&mut plan, &device) {
         Ok(()) => {
-            if is_pwndfu(&device) {
+            drop(device);
+            if acquire(Some(PWND_SERIAL_MARKER)).is_ok() {
                 println!("Device is now in pwned DFU Mode.");
                 println!("({:.2} seconds)", start.elapsed().as_secs_f64());
                 return;
             }
-            println!("Device is in DFU but not pwndfu ({})", device.serial_number);
+            println!("Device is in DFU but not pwndfu ({attached_serial})");
         }
         Err(reason) => die_line(&format!("ERROR: {reason}")),
     }
