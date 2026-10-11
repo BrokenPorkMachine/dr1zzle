@@ -18,6 +18,8 @@ The state it leaves the device in is the pwndfu command channel that
 [goat/usb.py](usb.py) already speaks, so `goat send` works immediately after.
 """
 
+import os
+import shutil
 import subprocess
 import time
 
@@ -72,6 +74,47 @@ def _cpid_of(serial):
     return None
 
 
+def _rpwn_binary():
+    """Find the Rust-native RPWN driver, if it is installed or built locally."""
+    configured = os.environ.get("GOAT_RPWN") or os.environ.get("RPWN")
+    candidates = []
+    if configured:
+        candidates.append(configured)
+    found = shutil.which("rpwn")
+    if found:
+        candidates.append(found)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates.extend((
+        os.path.join(root, "rpwn", "rust", "target", "release", "rpwn"),
+        os.path.join(root, "RPWN", "target", "release", "rpwn"),
+        os.path.join(root, "ipwndfu", "rust", "target", "release", "rpwn"),
+    ))
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _run_rpwn(verbose=False):
+    """Run Rust RPWN when present; return None when compatibility fallback is needed."""
+    binary = _rpwn_binary()
+    if binary is None:
+        return None
+    print("goat: using Rust RPWN (%s)" % binary)
+    result = subprocess.run(
+        [binary, "-p"],
+        check=False,
+        capture_output=not verbose,
+        text=True,
+    )
+    if not verbose:
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+    return result.returncode
+
+
 def checkm8(verbose=False, dry_run=False, wait=10.0, interpreter=None):
     """Run checkm8 on the attached device. Returns 0 on success.
 
@@ -90,7 +133,8 @@ def checkm8(verbose=False, dry_run=False, wait=10.0, interpreter=None):
         print("goat: %s" % exc)
         return 1
     serial = dev.serial
-    dev.close()
+    if hasattr(dev, "close"):
+        dev.close()
 
     if PWND_SERIAL in serial:
         print("goat: device is already pwndfu (%s)" % serial)
@@ -108,7 +152,11 @@ def checkm8(verbose=False, dry_run=False, wait=10.0, interpreter=None):
     if dry_run:
         return 0
 
-    print("goat: running checkm8")
+    print("goat: running Rust RPWN when available")
+    rust_result = _run_rpwn(verbose=verbose)
+    if rust_result is not None:
+        return rust_result
+    print("goat: RPWN binary not found; using Goat compatibility path")
     result = cm8.run(plan, verbose=verbose)
     if result != 0:
         return result
@@ -151,7 +199,8 @@ def acquire_pwndfu(auto_pwn=True, verbose=False, timeout=5.0):
     if dev is not None and PWND_SERIAL in dev.serial:
         return dev
     if dev is not None:
-        dev.close()
+        if hasattr(dev, "close"):
+            dev.close()
     if failure is not None:
         # The device is there but could not be opened. Exploiting something we
         # know nothing about is not the fix, so report what the open said.
@@ -165,7 +214,8 @@ def acquire_pwndfu(auto_pwn=True, verbose=False, timeout=5.0):
     dev = _dfu_device(usb_dev, max(timeout, 10.0))
     if PWND_SERIAL not in dev.serial:
         serial = dev.serial
-        dev.close()
+        if hasattr(dev, "close"):
+            dev.close()
         raise UsbError("checkm8 reported success but the device is still not "
                        "pwndfu (%s)" % (serial or "no serial"))
     return dev
