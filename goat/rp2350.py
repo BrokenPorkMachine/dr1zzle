@@ -29,11 +29,20 @@ UF2_MAGIC_END = (0x0AB16F30).to_bytes(4, "little")
 def firmware_path(board, firmware_dir=None):
     if board not in BOARDS:
         raise ValueError("unknown board %r (choose: %s)" % (board, ", ".join(BOARDS)))
-    root = os.path.abspath(firmware_dir or ASSET_DIR)
-    path = os.path.join(root, "usbr34ker.%s.uf2" % board)
-    if not os.path.isfile(path):
-        raise OSError("missing bundled firmware: %s" % path)
-    return path
+    filename = "usbr34ker.%s.uf2" % board
+    roots = []
+    if firmware_dir:
+        roots.append(os.path.abspath(firmware_dir))
+    roots.append(ASSET_DIR)
+    # A zipapp cannot open data through its __file__ path. Releases therefore
+    # keep UF2s beside the executable (or in a sibling firmware directory).
+    launcher_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    roots.extend((launcher_dir, os.path.join(launcher_dir, "firmware")))
+    for root in roots:
+        path = os.path.join(root, filename)
+        if os.path.isfile(path):
+            return path
+    raise OSError("missing bundled firmware: %s" % os.path.join(roots[0], filename))
 
 
 def validate_uf2(path):
@@ -72,10 +81,10 @@ def cmd_list(args):
     root = os.path.abspath(args.firmware_dir or ASSET_DIR)
     print("goat: usbr34ker firmware bundle: %s" % root)
     for board in BOARDS:
-        path = os.path.join(root, "usbr34ker.%s.uf2" % board)
-        if os.path.isfile(path):
+        try:
+            path = firmware_path(board, args.firmware_dir)
             print("  %-30s %7d bytes  %s" % (board, validate_uf2(path), path))
-        else:
+        except OSError:
             print("  %-30s MISSING" % board)
     ports = serial_ports()
     mounts = boot_mounts()
