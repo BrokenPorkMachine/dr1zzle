@@ -277,6 +277,17 @@ pub fn exploit() {
         println!("{}", line);
     }
 
+    // The profile-driven path intentionally stops before the trigger while we
+    // measure it. The complete Rust checkm8 implementation already carries
+    // the A10/A11 candidate overwrite layouts, so use that sequence for a
+    // real attempt by default. Set this variable to keep the run bounded at
+    // the measured stage boundary while collecting transport observations.
+    if std::env::var_os("RPWN_CHECKM8_DRY_RUN").is_none() {
+        println!("checkm8: attempting the Rust candidate trigger sequence");
+        crate::checkm8::exploit();
+        return;
+    }
+
     let device = match acquire(None) {
         Ok(device) => device,
         Err(reason) => die_line(&format!("ERROR: {reason}")),
