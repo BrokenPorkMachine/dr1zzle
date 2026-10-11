@@ -4,7 +4,7 @@
  * drags into SecureROM. It is written from the eLab forensics analysis of the
  * bug plus constants measured from this project's own A11 SecureROM image and
  * from a run of the same image in this project's emulator. Nothing is copied
- * from another exploit tool; goat/checkm8_profile.py records where every
+ * from another exploit tool; the Rust rpwn profile records where every
  * constant came from.
  *
  * Layout, offsets from the DFU image base (0x18001c000 on the A11):
@@ -46,10 +46,10 @@
 #endif
 
 /* Every per-part constant below is supplied by the build (-D from
- * goat/checkm8_payload.py) so the same source assembles for either A11 build,
+ * the Rust payload builder) so the same source assembles for either A11 build,
  * which are different images with different gadget addresses. The defaults
  * exist only so the file can be assembled standalone for a syntax check.
- * See goat/checkm8_profile.py for where each value was measured. */
+ * See rpwn/rust/src/profile.rs for where each value was measured. */
 #define G_PIVOT          PROFILE_PIVOT
 #define G_CTX_ENTRY      PROFILE_CTX_ENTRY
 #define G_READ_SCTLR     PROFILE_READ_SCTLR
@@ -241,7 +241,7 @@ pwndfu_status:
 
 /* ------------------------------------------------------------------ tables
  *
- * The host fills these in (goat/checkm8_payload.py) at fixed offsets. The
+ * The host fills these in from the Rust payload builder at fixed offsets. The
  * shape is declared here so the layout is argued about in one place: an L1
  * with one live table entry pointing at an L2 whose code page is read-execute
  * and whose every other page is read-write.

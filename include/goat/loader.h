@@ -26,7 +26,7 @@
  * away. Turning it off would be a build change, not a runtime one.
  *
  * The pre-configured static address is what makes the remote side easy: the
- * host tool defaults to 192.168.42.1:1234 (goat/cli.py), the device defaults
+ * Rust Goat host tooling defaults to 192.168.42.1:1234, the device defaults
  * to the same address, and neither needs DHCP, a route, or a configuration
  * step. See net.h for the address itself and docs/GOATLOADER.md for the
  * whole contract.
@@ -37,8 +37,7 @@
  * tool can branch on a prefix check.
  */
 
-/* Listener port. Must stay equal to GOATLOADER_PORT in goat/cli.py; there is
- * a host test that reads both and fails when they drift. */
+/* Listener port. Must stay equal to the Rust Goat host tooling. */
 #define GOATLOADER_PORT 1234u
 
 /* One listening socket plus this many concurrent sessions. The stack has four

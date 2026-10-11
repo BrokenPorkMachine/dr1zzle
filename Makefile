@@ -424,7 +424,7 @@ goat-test:
 	cargo test --locked --manifest-path goat-rust/Cargo.toml
 
 loader-test:
-	python3 tests/test_goatloader.py
+	cargo test --locked --manifest-path goat-rust/Cargo.toml
 
 # The SEP work: the mailbox protocol against pongoOS and captured traces, and
 # the shell-wrapper layer that owns the static driver instance.

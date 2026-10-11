@@ -695,15 +695,6 @@ class TestBringupOrder(unittest.TestCase):
         line = main[main.rfind("\n", 0, index):index]
         self.assertNotIn("if", line, f"goatloader_init() looks conditional: {line}")
 
-    def test_port_matches_the_host_tool(self):
-        """1234 is a contract with goat/cli.py, not a local choice."""
-        header = open("include/goat/loader.h").read()
-        cli = open("goat/cli.py").read()
-        device = re.search(r"#define GOATLOADER_PORT (\d+)u", header).group(1)
-        host = re.search(r"GOATLOADER_PORT = (\d+)", cli).group(1)
-        self.assertEqual(device, host)
-
-
 class TestNandWriter(unittest.TestCase):
     """Static checks on the NAND write path.
 

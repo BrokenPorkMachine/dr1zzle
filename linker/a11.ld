@@ -32,7 +32,7 @@ SECTIONS
 
     /* End of the flat image. Everything past this point is initialised RAM,
        and the image itself has to end below the pwndfu command area at
-       0x18001C000 (goat/usb.py, DFU_IMAGE_BASE) -- that is the channel the
+       0x18001C000 (Rust Goat DFU transport) -- that is the channel the
        upload travels through, so overlapping it is the one placement failure
        that cannot be recovered from on the device. Asserted rather than
        measured, because a link failure that names the rule is worth more than
@@ -84,7 +84,7 @@ SECTIONS
 
     /* Goatloader staging window, pinned to the tail of SRAM.
      *
-     * The base is a shared constant, not a leftover: goat/container.py's
+     * The base is a shared constant, not a leftover: the Goat container
      * GOAT_STAGE_BASE is 0x180100000 and the host tool refuses to place a
      * container outside [GOAT_STAGE_BASE, SRAM end]. The device side used to
      * compute this address dynamically from wherever .bss/heap/stack happened

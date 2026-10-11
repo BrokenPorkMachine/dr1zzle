@@ -6,7 +6,7 @@ The payload used to be one flat image that brought up every peripheral and
 linked every driver. It outgrew the one placement rule that cannot be
 recovered from on the device: `goat kload` (the pwndfu upload path) writes
 through a window that must not reach the pwndfu command area at
-`0x18001C000` (`goat/usb.py`, `DFU_IMAGE_BASE`). A flat image spanning that
+`0x18001C000` (the Rust Goat DFU transport, `DFU_IMAGE_BASE`). A flat image spanning that
 window could not be loaded at all.
 
 The fix is a split, not a compression:
@@ -198,7 +198,7 @@ touch flash at all.
   stack and MMU symbols; the NAND write sequences and write-path exports
   (`TestNandWriter`); and that the firmware's `__firmware_image_end` matches
   its `.bin` (`TestFirmwareImage`). `make` + `python3 tests/test_hw.py`.
-- `tests/goat_test.py`, `tests/test_goatloader.py` — container format, the
+- Rust Goat tests and the loader C harness — container format, the
   staging-window assertions (`__stage_base == 0x180100000`,
   `__stage_limit == 0x1801E8000`), push placement, and the `INSTALL` verb
   (OK / no-stage / out-of-range / store failure).

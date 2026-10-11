@@ -81,9 +81,8 @@ region is dropped by the payload's own entry.
 
 `kload` runs checkm8 itself when the device is in DFU but not yet exploited,
 because that is one user-visible action ("put this image on my device"), not
-two. The exploit is still the one delegated step — `goat/kload.py` contains no
-exploit logic, it only calls the same `checkm8` entry point `goat pwn` uses,
-which uses the Rust-native `rpwn` binary when available. Pass `--no-pwn` to
+two. The exploit is still the one delegated step — the Rust Goat command
+boundary calls the Rust-native `rpwn` implementation used by `goat pwn`. Pass `--no-pwn` to
 require an already-pwndfu device; a device that is not pwndfu is then an error,
 and the message says
 to run `goat pwn`.
@@ -125,7 +124,7 @@ tree's linker script and `include/memory_map.h`.
 
 ## Tests
 
-`make goat-test` runs `tests/goat_test.py`: image sniffing and ELF parsing,
+`make goat-test` runs the Rust Goat tests: container parsing, signature checks,
 placement and window rejection, the container paths (plain, wrapped, staged,
 tampered), and the device-side flow against a stub that records every write,
 every readback, the register order of the jump, and the handoff poll.

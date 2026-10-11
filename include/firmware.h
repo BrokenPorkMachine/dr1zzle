@@ -35,7 +35,7 @@
 
 /* Where the core places a firmware before it runs it. This deliberately
  * coincides with the goatloader staging window and the host tool's
- * GOAT_STAGE_BASE (goat/container.py), so a pushed container and an on-NAND
+ * GOAT_STAGE_BASE (the Rust Goat container implementation), so a pushed container and an on-NAND
  * firmware share one region: the core only ever holds one at a time, and the
  * two delivery paths cannot disagree about where it lands. */
 #define FW_LOAD_BASE    0x180100000ull

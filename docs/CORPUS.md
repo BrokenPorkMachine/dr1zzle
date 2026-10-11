@@ -4,10 +4,9 @@
 into a directory with a self-describing manifest.
 
 ```
-python3 goat/goat pull --list-targets
-python3 goat/goat pwn                 # checkm8 into pwndfu state
-python3 goat/goat pull --outdir corpus/<host>-<date>
-python3 goat/goat pull securerom dfu-state --skip-unverified
+./goat/goat pwn                       # checkm8 into pwndfu state
+rpwn --dump=0x100000000,0x100000 corpus/securerom.bin
+rpwn --dump=0x18001C000,0x40000 corpus/dfu-state.bin
 ```
 
 ## What it captures
