@@ -8,4 +8,8 @@ publish = false
 name = "goat"
 path = "src/main.rs"
 
+[dependencies]
+aes = "0.8"
+sha2 = "0.10"
+
 [workspace]

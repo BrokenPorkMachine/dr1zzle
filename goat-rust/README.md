@@ -10,7 +10,7 @@ cargo build --release --manifest-path goat-rust/Cargo.toml --locked
 ```
 
 The binary supports `usbr34ker list`, `usbr34ker flash`,
-`usbr34ker walkthrough`, `inspect <container>`, and `pwn`. The remaining sealing/container and
+`usbr34ker walkthrough`, `inspect <container>`, `unseal <container> --key-hex HEX`, and `pwn`. The remaining sealing/container and
 kload command families are being ported behind the same command boundary;
 the legacy Python modules remain isolated until their Rust implementations
 pass equivalent byte and transport tests.

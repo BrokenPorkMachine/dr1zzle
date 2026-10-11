@@ -1,6 +1,7 @@
 use std::{env, fs, io, path::{Path, PathBuf}, process::{Command, ExitCode}, thread, time::Duration};
 
 mod container;
+mod crypto;
 
 const BOARDS: [&str; 4] = ["pico2", "pimoroni_tiny2350", "waveshare_rp2350_usb_a", "waveshare_rp2350_zero"];
 const UF2_MAGIC: [u8; 4] = [0x55, 0x46, 0x32, 0x0a];
@@ -49,6 +50,9 @@ fn rpwn() -> io::Result<ExitCode> {
     Ok(status.code().and_then(|c| u8::try_from(c).ok()).map(ExitCode::from).unwrap_or(ExitCode::FAILURE))
 }
 fn walkthrough() { println!("GOAT / usbr34ker Rust walkthrough\n1. Connect the RP2350 helper board in BOOTSEL mode.\n2. Select one of: {}\n3. Flash its UF2 to RPI-RP2.\n4. Observe the 115200 baud UART.\n5. Use the Rust RPWN path for Apple DFU.", BOARDS.join(", ")); }
+fn hex_bytes(s:&str)->io::Result<Vec<u8>>{let s=s.strip_prefix("0x").unwrap_or(s);if s.len()%2!=0{return Err(err("hex value must have an even length"))};(0..s.len()).step_by(2).map(|i|u8::from_str_radix(&s[i..i+2],16).map_err(|_|err("invalid hex key"))).collect()}
+fn hex(v:&[u8])->String{v.iter().map(|b|format!("{b:02x}")).collect()}
+
 fn main() -> ExitCode {
     let a: Vec<String>=env::args().skip(1).collect();
     let result: io::Result<ExitCode> = match a.first().map(String::as_str) {
@@ -58,9 +62,10 @@ fn main() -> ExitCode {
             Some("flash") => { let b=a.iter().position(|x|x=="--board").and_then(|i|a.get(i+1)).ok_or_else(||err("--board is required")); let m=a.iter().position(|x|x=="--mount").and_then(|i|a.get(i+1)).map(PathBuf::from).or_else(||mounts().into_iter().next()); match (b,m) { (Ok(b),Some(m))=>flash(b,&firmware_dir(None),&m,0.0).map(|_|ExitCode::SUCCESS), (_,None)=>Err(err("RP2 boot volume not found; pass --mount")), (Err(e),_)=>Err(e) } },
             _ => Err(err("usage: goat usbr34ker {list|walkthrough|flash}")),
         },
+        Some("unseal") => (|| -> io::Result<ExitCode> { let p=a.get(1).ok_or_else(||err("usage: goat unseal <container> --key-hex HEX"))?; let i=a.iter().position(|x|x=="--key-hex").and_then(|n|a.get(n+1)).ok_or_else(||err("--key-hex is required"))?; let key=hex_bytes(i)?; let payload=container::decrypt_payload(&fs::read(p)?,&key)?; print!("unsealed {} bytes, sha256={}\n",payload.len(),hex(&crypto::sha256(&payload))); Ok(ExitCode::SUCCESS) })(),
         Some("inspect") => (|| -> io::Result<ExitCode> { let p=a.get(1).ok_or_else(||err("usage: goat inspect <container>"))?; let text=container::inspect(&fs::read(p)?)?; print!("{text}"); Ok(ExitCode::SUCCESS) })(),
         Some("pwn") => rpwn(),
-        Some("--help")|None => { println!("goat-rs: Rust-native Goat\n  usbr34ker list|walkthrough|flash\n  pwn   run Rust RPWN"); Ok(ExitCode::SUCCESS) },
+        Some("--help")|None => { println!("goat-rs: Rust-native Goat\n  usbr34ker list|walkthrough|flash\n  inspect <file>  inspect a Goat container\n  unseal <file> --key-hex HEX\n  pwn   run Rust RPWN"); Ok(ExitCode::SUCCESS) },
         _ => Err(err("unknown command; use --help")),
     };
     match result { Ok(code)=>code, Err(e)=>{eprintln!("goat-rs: {e}"); ExitCode::FAILURE} }
