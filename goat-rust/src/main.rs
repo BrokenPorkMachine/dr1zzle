@@ -1,5 +1,7 @@
 use std::{env, fs, io, path::{Path, PathBuf}, process::{Command, ExitCode}, thread, time::Duration};
 
+mod container;
+
 const BOARDS: [&str; 4] = ["pico2", "pimoroni_tiny2350", "waveshare_rp2350_usb_a", "waveshare_rp2350_zero"];
 const UF2_MAGIC: [u8; 4] = [0x55, 0x46, 0x32, 0x0a];
 const UF2_FAMILY: [u8; 4] = [0x57, 0x51, 0x5d, 0x9e];
@@ -56,6 +58,7 @@ fn main() -> ExitCode {
             Some("flash") => { let b=a.iter().position(|x|x=="--board").and_then(|i|a.get(i+1)).ok_or_else(||err("--board is required")); let m=a.iter().position(|x|x=="--mount").and_then(|i|a.get(i+1)).map(PathBuf::from).or_else(||mounts().into_iter().next()); match (b,m) { (Ok(b),Some(m))=>flash(b,&firmware_dir(None),&m,0.0).map(|_|ExitCode::SUCCESS), (_,None)=>Err(err("RP2 boot volume not found; pass --mount")), (Err(e),_)=>Err(e) } },
             _ => Err(err("usage: goat usbr34ker {list|walkthrough|flash}")),
         },
+        Some("inspect") => (|| -> io::Result<ExitCode> { let p=a.get(1).ok_or_else(||err("usage: goat inspect <container>"))?; let text=container::inspect(&fs::read(p)?)?; print!("{text}"); Ok(ExitCode::SUCCESS) })(),
         Some("pwn") => rpwn(),
         Some("--help")|None => { println!("goat-rs: Rust-native Goat\n  usbr34ker list|walkthrough|flash\n  pwn   run Rust RPWN"); Ok(ExitCode::SUCCESS) },
         _ => Err(err("unknown command; use --help")),
