@@ -6,6 +6,7 @@
 mod alloc8;
 mod checkm8;
 mod cli;
+mod cm8;
 mod device_platform;
 mod dfu;
 mod dfuexec;
@@ -13,7 +14,10 @@ mod image3;
 mod image3_24kpwn;
 mod libusb;
 mod limera1n;
+#[path = "payload.rs"]
+mod measured_payload;
 mod nor;
+mod profile;
 mod recovery;
 mod shatter;
 mod shellcode;
@@ -107,6 +111,14 @@ fn main() {
 fn run_usb_exploit() {
     let serial_number = PwnedDFUDevice::identifier();
 
+    // The measured Rust checkm8 path owns the A10/A11 profiles. It performs
+    // the profile selection and refuses before touching USB when the trigger
+    // point is not measured for the attached build.
+    if serial_number.contains("CPID:8010") || serial_number.contains("CPID:8015") {
+        cm8::exploit();
+        return;
+    }
+
     if serial_number.contains("CPID:8720") {
         steaks4uce::exploit();
     } else if serial_number.contains("CPID:8920") || serial_number.contains("CPID:8922") {
@@ -119,9 +131,7 @@ fn run_usb_exploit() {
         || serial_number.contains("CPID:8960")
         || serial_number.contains("CPID:8002")
         || serial_number.contains("CPID:8004")
-        || serial_number.contains("CPID:8010")
         || serial_number.contains("CPID:8011")
-        || serial_number.contains("CPID:8015")
     {
         checkm8::exploit();
     } else {
@@ -370,10 +380,10 @@ fn dump_ace2(path: &str) {
     // These are the AP-side addresses where ACE2 firmware is loaded
     let (ace2_base, ace2_size) = if serial.contains("CPID:8020") {
         // T8020 - iPhone XS/XR
-        (0x1801B0000u64, 0x40000u32)  // From device_platform: sram_base + offset
+        (0x1801B0000u64, 0x40000u32) // From device_platform: sram_base + offset
     } else if serial.contains("CPID:8027") {
         // T8027 - iPhone XS Max (A12X)
-        (0x19C000000u64, 0x80000u32)  // T8027 boot scratch area
+        (0x19C000000u64, 0x80000u32) // T8027 boot scratch area
     } else {
         // T8030 - iPhone 11 (A13)
         (0x19C000000u64, 0x80000u32)
@@ -400,30 +410,49 @@ fn print_memory_map() {
     println!("{}", serial);
 
     // Determine platform from serial
-    let cpid = if serial.contains("CPID:8920") { "8920" }
-    else if serial.contains("CPID:8922") { "8922" }
-    else if serial.contains("CPID:8930") { "8930" }
-    else if serial.contains("CPID:8947") { "8947" }
-    else if serial.contains("CPID:8950") { "8950" }
-    else if serial.contains("CPID:8955") { "8955" }
-    else if serial.contains("CPID:8960") { "8960" }
-    else if serial.contains("CPID:8002") { "8002" }
-    else if serial.contains("CPID:8004") { "8004" }
-    else if serial.contains("CPID:8010") { "8010" }
-    else if serial.contains("CPID:8011") { "8011" }
-    else if serial.contains("CPID:8015") { "8015" }
-    else if serial.contains("CPID:8020") { "8020" }
-    else if serial.contains("CPID:8027") { "8027" }
-    else if serial.contains("CPID:8030") { "8030" }
-    else if serial.contains("CPID:8720") { "8720" }
-    else { "unknown" };
+    let cpid = if serial.contains("CPID:8920") {
+        "8920"
+    } else if serial.contains("CPID:8922") {
+        "8922"
+    } else if serial.contains("CPID:8930") {
+        "8930"
+    } else if serial.contains("CPID:8947") {
+        "8947"
+    } else if serial.contains("CPID:8950") {
+        "8950"
+    } else if serial.contains("CPID:8955") {
+        "8955"
+    } else if serial.contains("CPID:8960") {
+        "8960"
+    } else if serial.contains("CPID:8002") {
+        "8002"
+    } else if serial.contains("CPID:8004") {
+        "8004"
+    } else if serial.contains("CPID:8010") {
+        "8010"
+    } else if serial.contains("CPID:8011") {
+        "8011"
+    } else if serial.contains("CPID:8015") {
+        "8015"
+    } else if serial.contains("CPID:8020") {
+        "8020"
+    } else if serial.contains("CPID:8027") {
+        "8027"
+    } else if serial.contains("CPID:8030") {
+        "8030"
+    } else if serial.contains("CPID:8720") {
+        "8720"
+    } else {
+        "unknown"
+    };
 
     println!("\n=== Memory Map (CPID: {}) ===", cpid);
 
     // Known regions (from SecureROM analysis and device_platform.rs)
     println!("\n--- Known Regions ---");
     match cpid {
-        "8015" => { // T8015 - iPhone X (A11)
+        "8015" => {
+            // T8015 - iPhone X (A11)
             println!("  Boot ROM:      0x1000_00000 - 0x1001_00000  (1 MB)");
             println!("  SRAM:          0x1800_00000 - 0x1800_20000  (128 KB)");
             println!("  Heap:          0x1800_E8000 - 0x1801_00000");
@@ -433,50 +462,59 @@ fn print_memory_map() {
             println!("  NAND Boot:     0x1000_0188C");
             println!("  Demotion Reg:  0x2352_BC000");
         }
-        "8020" => { // T8020 - iPhone XS/XR (A12)
+        "8020" => {
+            // T8020 - iPhone XS/XR (A12)
             println!("  Boot ROM:      0x1000_00000 - 0x1001_00000  (1 MB)");
             println!("  SRAM:          0x1800_00000 - 0x1800_20000  (128 KB)");
             println!("  ACE2:          0x1801_B0000 - 0x1801_F0000  (256 KB)");
             println!("  Demotion Reg:  0x2352_BC000 (T8020) / 0x2352_BC000");
         }
-        "8027" => { // T8027 - iPhone XS Max (A12X)
+        "8027" => {
+            // T8027 - iPhone XS Max (A12X)
             println!("  Boot ROM:      0x1000_00000 - 0x1001_00000  (1 MB)");
             println!("  Boot Scratch:  0x19C0_00000 - 0x19C0_40000  (256 KB)");
             println!("  ACE2:          0x19C0_00000 - 0x19C0_80000  (512 KB)");
             println!("  Demotion Reg:  0x2352_BC000");
         }
-        "8030" => { // T8030 - iPhone 11 (A13)
+        "8030" => {
+            // T8030 - iPhone 11 (A13)
             println!("  Boot ROM:      0x1000_00000 - 0x1001_00000  (1 MB)");
             println!("  Boot Scratch:  0x19C0_00000 - 0x19C0_40000  (256 KB)");
             println!("  ACE2:          0x19C0_00000 - 0x19C0_80000  (512 KB)");
             println!("  Demotion Reg:  0x2352_BC000");
         }
-        "8010" | "8011" => { // T8010/T8011 - iPhone 8/8 Plus (A11)
+        "8010" | "8011" => {
+            // T8010/T8011 - iPhone 8/8 Plus (A11)
             println!("  Boot ROM:      0x1000_00000 - 0x1001_00000  (1 MB)");
             println!("  SRAM:          0x1800_00000 - 0x1800_20000  (128 KB)");
             println!("  Demotion Reg:  0x2102_BC000");
         }
-        "8002" | "8004" => { // T8002/T8004 - Apple Watch S3 (A7)
+        "8002" | "8004" => {
+            // T8002/T8004 - Apple Watch S3 (A7)
             println!("  Boot ROM:      0x4000_0000 - 0x4010_0000  (1 MB)");
             println!("  SRAM:          0x4880_0000 - 0x4892_0000  (1152 KB)");
             println!("  Demotion Reg:  0x481B_C000");
         }
-        "8960" => { // S5L8960 - iPhone 5s (A7)
+        "8960" => {
+            // S5L8960 - iPhone 5s (A7)
             println!("  Boot ROM:      0x1000_00000 - 0x1000_80000  (512 KB)");
             println!("  SRAM:          0x1800_00000 - 0x1804_00000  (4 MB)");
             println!("  Demotion Reg:  0x20E0_2A000");
         }
-        "8947" | "8950" | "8955" => { // A8-A9
+        "8947" | "8950" | "8955" => {
+            // A8-A9
             println!("  Boot ROM:      0x3F00_0000 - 0x3F01_0000  (64 KB)");
             println!("  SRAM:          0x1000_0000 - 0x1080_0000  (8 MB)");
             println!("  Demotion Reg:  0x3F50_0000");
         }
-        "8920" | "8922" | "8930" => { // A5-A6
+        "8920" | "8922" | "8930" => {
+            // A5-A6
             println!("  Boot ROM:      0xBF00_0000 - 0xBF01_0000  (64 KB)");
             println!("  SRAM:          0x8400_0000 - 0x8500_0000  (16 MB)");
             println!("  Demotion Reg:  0x3F50_0000");
         }
-        "8720" => { // iPod Touch 2G
+        "8720" => {
+            // iPod Touch 2G
             println!("  Boot ROM:      0xBF00_0000 - 0xBF01_0000");
             println!("  SRAM:          0x8400_0000 - 0x8500_0000");
         }
@@ -486,7 +524,10 @@ fn print_memory_map() {
     }
 
     // DRAM base for all modern devices
-    if !matches!(cpid, "8920" | "8922" | "8930" | "8947" | "8950" | "8955" | "8960" | "8720") {
+    if !matches!(
+        cpid,
+        "8920" | "8922" | "8930" | "8947" | "8950" | "8955" | "8960" | "8720"
+    ) {
         println!("\n  DRAM Base:     0x8000_00000  (2 TB boundary)");
     }
 
