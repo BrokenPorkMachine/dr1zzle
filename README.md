@@ -134,11 +134,9 @@ and UART path for the RP2350 helper board. This path is intentionally separate
 from the Apple A11 `kload` loader:
 
 ```sh
-python3 goat/goat usbr34ker walkthrough
-python3 goat/goat usbr34ker walkthrough --interactive --board pico2
-python3 goat/goat usbr34ker list
-python3 goat/goat usbr34ker flash --board pico2
-python3 goat/goat usbr34ker terminal
+./goat/goat usbr34ker walkthrough
+./goat/goat usbr34ker list
+./goat/goat usbr34ker flash --board pico2
 ```
 
 The terminal opens the detected USB modem at 115200 8-N-1; Ctrl-] exits. Use
@@ -185,10 +183,10 @@ the address and the port are pre-configured on both sides, so a remote
 connection needs no setup:
 
 ```sh
-python3 goat/cli.py push payload.g1 --key-hex ...           # stage a sealed container
-python3 goat/cli.py push payload.g1 --key-hex ... --run     # stage and hand over
-python3 goat/cli.py install payload.g1 --slot 1 --key-hex ...  # seal into a NAND slot
-python3 goat/cli.py shell                                   # monitor console over TCP
+./goat/goat push payload.g1 --key-hex ...           # stage a sealed container
+./goat/goat push payload.g1 --key-hex ... --run     # stage and hand over
+./goat/goat install payload.g1 --slot 1 --key-hex ...  # stage into a NAND slot
+./goat/goat shell                                   # monitor console over TCP
 ```
 
 The listener is bound during bring-up, before the shell starts, and there is no

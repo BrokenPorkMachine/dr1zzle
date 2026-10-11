@@ -421,7 +421,7 @@ phase4-test:
 	python3 tests/test_phase4.py
 
 goat-test:
-	python3 tests/goat_test.py
+	cargo test --locked --manifest-path goat-rust/Cargo.toml
 
 loader-test:
 	python3 tests/test_goatloader.py

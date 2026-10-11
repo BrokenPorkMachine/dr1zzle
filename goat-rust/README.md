@@ -1,7 +1,8 @@
 # Goat (Rust)
 
-This crate is the Rust-native Goat command boundary. It owns the RP2350
-`usbr34ker` workflow and dispatches Apple DFU work to the Rust `rpwn` binary.
+This crate is the Rust implementation of the Goat command line. The stable
+repository entrypoint is `./goat/goat`; it runs this binary and never imports
+the legacy Python command line.
 
 Build with:
 
@@ -14,7 +15,5 @@ The binary supports `usbr34ker list`, `usbr34ker flash`,
 `unseal <container> --key-hex HEX`, and `pwn`. `verify` checks both the
 embedded certificate self-signature and the container signature using the
 certificate public key. `unseal` performs the same checks before decrypting.
-The remaining sealing/container and
-kload command families are being ported behind the same command boundary;
-the legacy Python modules remain isolated until their Rust implementations
-pass equivalent byte and transport tests.
+The Python files under `goat/` are retained only as historical protocol and
+test references; they are not an executable implementation or dispatch path.

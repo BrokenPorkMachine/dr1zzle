@@ -1,12 +1,8 @@
-#!/usr/bin/env python3
-"""goat launcher: `./goat/goat <command> ...`."""
-import os
-import sys
+#!/bin/sh
+# Rust is the only Goat command implementation. Keep this stable repository
+# entrypoint so existing `./goat/goat ...` workflows do not depend on Python.
+set -eu
 
-# The package lives in the parent of this launcher's directory, not in it.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from goat.cli import main  # noqa: E402
-
-if __name__ == "__main__":
-    sys.exit(main())
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec cargo run --quiet --release --locked \
+    --manifest-path "$repo/goat-rust/Cargo.toml" -- "$@"
