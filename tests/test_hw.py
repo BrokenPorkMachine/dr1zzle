@@ -485,6 +485,24 @@ class TestUsb(unittest.TestCase):
                       "SET_ADDRESS is never applied after the status stage")
 
 
+class TestAce2Safety(unittest.TestCase):
+    """ACE2 remains an unverified research surface; these checks only ensure
+    that its shell-facing failure paths are bounded and range-checked."""
+
+    def _ace2_source(self):
+        return Path("src/research/ace2.c").read_text()
+
+    def test_reset_has_a_bounded_timeout(self):
+        src = self._ace2_source()
+        self.assertIn("timer_wait_reg(&ace2[0x10 / 4], 1, 0, 10000)", src)
+        self.assertIn("refusing to configure it", src)
+
+    def test_port_operations_validate_the_port(self):
+        src = self._ace2_source()
+        self.assertEqual(src.count("if (!ace2_valid_port(port)) return;"), 3)
+        self.assertIn("#define ACE2_MAX_PORTS 8", Path("include/ace2.h").read_text())
+
+
 class TestAicInterruptController(unittest.TestCase):
     """IRQ dispatch used to poll the sources it knew by name and call a
     stubbed aic_eoi(). It now dispatches on the line number the controller

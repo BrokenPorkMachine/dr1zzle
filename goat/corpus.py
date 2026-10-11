@@ -7,12 +7,12 @@ docs/CORPUS.md for why that line is where it is.
 Two properties this module is built around:
 
 1.  **Provenance.** Every target carries the source its address came from, so
-    a future reader can separate "documented in ipwndfu/device_platform.py"
+    a future reader can separate "documented in rpwn/rust/src/device_platform.rs"
     from "assumed". Anything not documented is marked and can be dropped from
     a capture with --skip-unverified.
 
 2.  **Self-verification.** The A11 SecureROM SHA-1 is published (this repo
-    pins it in ipwndfu/device_platform.py). Capturing it and matching that
+    pins it in rpwn/rust/src/device_platform.rs). Capturing it and matching that
     digest proves the entire chain -- DFU transport, read path, file write,
     hashing -- is correct before any of the *unverified* captures are trusted.
 """
@@ -39,7 +39,7 @@ TARGETS = [
         "address": 0x100000000,
         "length": 0x100000,
         "access": ACCESS_DIRECT,
-        "source": "ipwndfu/device_platform.py: rom_base/rom_size for cpid 0x8015",
+        "source": "rpwn/rust/src/device_platform.rs: rom_base/rom_size for cpid 0x8015",
         "known_sha1": "96fccb1a63de1a2d50ff14555d3898a5af46e9b1",
         "self_verifies": True,
     },
@@ -49,7 +49,7 @@ TARGETS = [
         "address": 0x180000000,
         "length": 0x200000,
         "access": ACCESS_DIRECT,
-        "source": "ipwndfu/device_platform.py: sram_base/sram_size for cpid 0x8015",
+        "source": "rpwn/rust/src/device_platform.rs: sram_base/sram_size for cpid 0x8015",
     },
     {
         "name": "dfu-state",
@@ -57,7 +57,7 @@ TARGETS = [
         "address": 0x18001C000,
         "length": 0x40000,
         "access": ACCESS_DIRECT,
-        "source": "ipwndfu/device_platform.py: dfu_image_base for cpid 0x8015",
+        "source": "rpwn/rust/src/device_platform.rs: dfu_image_base for cpid 0x8015",
     },
     {
         "name": "dram",
@@ -65,7 +65,7 @@ TARGETS = [
         "address": 0x800000000,
         "length": 0x100000,
         "access": ACCESS_STATE,
-        "source": "ipwndfu/device_platform.py: dram_base for cpid 0x8015",
+        "source": "rpwn/rust/src/device_platform.rs: dram_base for cpid 0x8015",
     },
     {
         "name": "iboot",

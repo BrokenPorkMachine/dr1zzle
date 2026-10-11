@@ -2,7 +2,7 @@
 
 checkra1n shipped `kload` to push a pongoOS image onto a device that had
 already been exploited; this is the same job for a dr1zzle image, done through
-goat's own transport instead of ipwndfu's. The flow is:
+goat's own transport. The flow is:
 
     plan      decide what goes where, and where to jump, with no device
               attached. A bad image fails here, not half-written into SRAM.
@@ -28,8 +28,8 @@ Three image forms are accepted, identified from the file's own bytes:
                linker gives _start, both overridable.
 
 The exploit itself is not here: this module contains no exploit logic. It
-calls the same checkm8 entry point `goat pwn` uses, which shells out to the
-vendored ipwndfu.
+calls the same entry point `goat pwn` uses (goat/pwn.py), which runs this
+project's own checkm8 implementation.
 """
 
 import struct
@@ -397,43 +397,12 @@ def wait_for_handoff(usb, timeout, poll=HANDOFF_POLL):
         time.sleep(min(poll, left))
 
 
-def acquire_pwndfu(auto_pwn=True, ipwndfu_dir="ipwndfu", timeout=5.0):
-    """Open a pwndfu device, exploiting it first when that is allowed.
+def acquire_pwndfu(auto_pwn=True, timeout=5.0, verbose=False):
+    """Open a pwndfu device, exploiting a plain DFU one first when allowed.
 
-    A device that is in DFU but not yet pwndfu gets checkm8 run on it when
-    auto_pwn is set, because "put this image on my device" is one action, not
-    two. With auto_pwn off, that device is an error and the message says to
-    run `goat pwn`. A device that will not open at all says nothing about its
-    state, so it is reported rather than worked around by exploiting it.
+    The exploit, the CPID gate and the pwndfu verification all live in
+    `goat/pwn.py`; this entry point is the one `kload` calls so the two paths
+    into "a device I can send an image to" stay in step.
     """
-    from .pwn import checkm8
-    from .usb import LibusbDeviceList, PwnedDFU, UsbError
-
-    usb = LibusbDeviceList()
-    if not usb.dfu_present():
-        raise UsbError("no Apple device in DFU mode (05ac:1227); put the "
-                       "device into DFU and try again")
-
-    dev = PwnedDFU(usb, timeout=timeout)
-    if PWND_SERIAL in dev.serial:
-        return dev
-
-    if not auto_pwn:
-        serial = dev.serial
-        dev.close()
-        raise UsbError("the device is in DFU but not pwndfu (%s); run "
-                       "'goat pwn' first, or pass --pwn"
-                       % (serial or "no serial"))
-
-    dev.close()
-    if checkm8(ipwndfu_dir) != 0:
-        raise UsbError("checkm8 did not succeed; the device was not left in "
-                       "pwndfu state")
-
-    dev = PwnedDFU(LibusbDeviceList(), timeout=timeout)
-    if PWND_SERIAL not in dev.serial:
-        serial = dev.serial
-        dev.close()
-        raise UsbError("checkm8 reported success but the device is still not "
-                       "pwndfu (%s)" % (serial or "no serial"))
-    return dev
+    from .pwn import acquire_pwndfu as _acquire
+    return _acquire(auto_pwn=auto_pwn, verbose=verbose, timeout=timeout)

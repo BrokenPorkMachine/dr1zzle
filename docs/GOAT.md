@@ -83,12 +83,13 @@ region is dropped by the payload's own entry.
 because that is one user-visible action ("put this image on my device"), not
 two. The exploit is still the one delegated step — `goat/kload.py` contains no
 exploit logic, it only calls the same `checkm8` entry point `goat pwn` uses,
-which shells out to the vendored `ipwndfu` (Python 2). Turn it off with
-`--no-pwn`; then a device that is not pwndfu is an error, and the message says
+which uses the Rust-native `rpwn` binary when available. Pass `--no-pwn` to
+require an already-pwndfu device; a device that is not pwndfu is then an error,
+and the message says
 to run `goat pwn`.
 
 ```
-brew install python@2     # or apt install python2 -- what auto-pwn needs
+cargo build --release --manifest-path rpwn/rust/Cargo.toml --locked
 ```
 
 ## Practical modes
@@ -118,7 +119,7 @@ available from the host, and it is why the payload prints its bring-up on UART.
 
 Nothing here has been run on an A11. The transfer path (control-transfer
 sequence, command framing, `memcpy`/`memset`/`exec` opcodes, and the
-`SRTG`-dependent load base) is the same one the vendored `ipwndfu` documents;
+`SRTG`-dependent load base) is pinned by the Rust RPWN profile table;
 the A11 addresses (`0x180000000` SRAM, the entry at `+0x1000`) come from this
 tree's linker script and `include/memory_map.h`.
 

@@ -127,6 +127,25 @@ for the register convention and the toggles (`--no-pwn`, `--no-run`,
 (fixed panel, output pane below it, pinned status line — see
 [docs/MENU.md](docs/MENU.md)) and takes input on the serial console.
 
+## RP2350 helper-board workflow
+
+Goat also carries the four `usbr34ker` UF2 images and provides a guided flash
+and UART path for the RP2350 helper board. This path is intentionally separate
+from the Apple A11 `kload` loader:
+
+```sh
+python3 goat/goat usbr34ker walkthrough
+python3 goat/goat usbr34ker walkthrough --interactive --board pico2
+python3 goat/goat usbr34ker list
+python3 goat/goat usbr34ker flash --board pico2
+python3 goat/goat usbr34ker terminal
+```
+
+The terminal opens the detected USB modem at 115200 8-N-1; Ctrl-] exits. Use
+`--mount /Volumes/RPI-RP2` when the boot volume is not found automatically.
+See [goat/USBR34KER_GOAT.md](goat/USBR34KER_GOAT.md) for the complete live
+walkthrough and the handoff back to `goat kload`.
+
 See [dumps and snapshots](docs/DUMP_WIRE_FORMAT.md) for the byte-level formats,
 [SSH/SCP on 443](docs/SSH_SCP_443.md) for the remote-access protocol, and
 [transport](docs/TRANSPORT.md) for link selection and the streaming scheduler.

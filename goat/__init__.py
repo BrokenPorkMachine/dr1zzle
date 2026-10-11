@@ -7,7 +7,7 @@ Modules:
     container  the GOAT container: seal, parse, verify, decrypt
     usb        libusb transport and the pwndfu DFU command channel
     kload      plan a dr1zzle image and boot it on a pwndfu device
-    pwn        the one thing delegated: running checkm8 via the vendored ipwndfu
+    pwn        the one thing delegated: running Rust-native RPWN, with Goat’s measured path as fallback
     cli        the `goat` command line
 """
 

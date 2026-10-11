@@ -140,18 +140,27 @@ static off_t apfs_vfs_lseek(struct vfs_file *file, off_t offset, int whence) {
     switch (whence) {
         case VFS_SEEK_SET:
             if (offset < 0) return -1;
-            afile->pos = offset;
+            afile->pos = (uint64_t)offset;
             break;
         case VFS_SEEK_CUR:
-            if (afile->pos + offset < 0) return -1;
-            afile->pos += offset;
+            if (offset < 0) {
+                /* Avoid negating INT64_MIN and reject seeks before zero. */
+                uint64_t backward = (uint64_t)(-(offset + 1)) + 1;
+                if (backward > afile->pos) return -1;
+                afile->pos -= backward;
+            } else {
+                uint64_t forward = (uint64_t)offset;
+                if (afile->pos > (uint64_t)INT64_MAX ||
+                    forward > (uint64_t)INT64_MAX - afile->pos) return -1;
+                afile->pos += forward;
+            }
             break;
         case VFS_SEEK_END:
             return -1; /* Not implemented */
         default:
             return -1;
     }
-    return afile->pos;
+    return (off_t)afile->pos;
 }
 
 /* ========================================================================

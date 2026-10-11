@@ -6,7 +6,7 @@
  *
  * This profile exists because the part does, not because this tree can
  * describe it. Nobody's reference tree has a T8021 platform record: it is
- * absent from ipwndfu's device table, from pongoOS's per-SoC drivers, and from
+ * absent from rpwn's device table, from pongoOS's per-SoC drivers, and from
  * iphemeral's SoC configs, and usbliter8's README names A12X/A12Z as
  * theoretically reachable but not implemented. So every field below is either
  * an identity fact or SOC_UNRECORDED.
