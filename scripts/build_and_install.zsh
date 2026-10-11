@@ -48,11 +48,9 @@ command -v clang >/dev/null 2>&1 || die "clang not found — install Xcode CLT"
 [[ -d /opt/homebrew/opt/llvm/bin ]] || die "llvm tools not found — brew install llvm"
 ok "clang + llvm tools"
 
-# goat needs: python3, libusb
-command -v python3 >/dev/null 2>&1 || die "python3 not found"
-python3 -c "import ctypes.util; ctypes.util.find_library('usb-1.0')" >/dev/null 2>&1 \
-    && ok "python3 + libusb" \
-    || warn "python3 found but libusb missing — goat USB commands will fail (brew install libusb)"
+# goat is a Rust binary; libusb is linked by the Rust DFU stack.
+command -v cargo >/dev/null 2>&1 || die "cargo not found — install Rust"
+ok "cargo"
 
 # usbr34ker needs: Pico SDK, cmake, arm-none-eabi-gcc with newlib
 if [[ $SKIP_USBR34KER -eq 0 ]]; then
@@ -95,9 +93,14 @@ mkdir -p "$TOOLKIT_DIR"/{bin,lib/goat,dr1zzle,usbr34ker}
 cp "$DR1ZZLE_DIR/build/a11-payload.bin"   "$TOOLKIT_DIR/dr1zzle/"
 cp "$DR1ZZLE_DIR/build/firmware/dr1zzle.bin" "$TOOLKIT_DIR/dr1zzle/"
 
-# goat Python package
-cp -R "$DR1ZZLE_DIR/goat/" "$TOOLKIT_DIR/lib/goat/"
-rm -rf "$TOOLKIT_DIR/lib/goat/__pycache__" "$TOOLKIT_DIR/lib/goat/build"
+# Goat Rust binary and bundled helper firmware
+cargo build --release --locked --manifest-path "$DR1ZZLE_DIR/goat-rust/Cargo.toml"
+ cargo build --release --locked --manifest-path "$DR1ZZLE_DIR/rpwn/rust/Cargo.toml"
+cp "$DR1ZZLE_DIR/goat-rust/target/release/goat" "$GOAT_BIN"
+cp "$DR1ZZLE_DIR/rpwn/rust/target/release/rpwn" "$TOOLKIT_DIR/bin/rpwn"
+chmod +x "$GOAT_BIN"
+chmod +x "$TOOLKIT_DIR/bin/rpwn"
+cp -R "$DR1ZZLE_DIR/goat/usbr34ker" "$TOOLKIT_DIR/lib/"
 
 # usbr34ker .uf2 artifacts
 if [[ $SKIP_USBR34KER -eq 0 ]]; then
@@ -105,16 +108,6 @@ if [[ $SKIP_USBR34KER -eq 0 ]]; then
         || cp "$USBR34KER_DIR"/dist/*.uf2    "$TOOLKIT_DIR/usbr34ker/" 2>/dev/null \
         || warn "No .uf2 files found — check usbr34ker build output"
 fi
-
-# goat launcher wrapper
-cat > "$GOAT_BIN" << 'LAUNCHER'
-#!/usr/bin/env bash
-# goat launcher — installed by dr1zzle build_and_install.zsh
-TOOLKIT="${HOME}/.dr1zzle-toolkit"
-export PYTHONPATH="${TOOLKIT}/lib:${PYTHONPATH:-}"
-exec python3 -m goat.cli "$@"
-LAUNCHER
-chmod +x "$GOAT_BIN"
 
 ok "Package created"
 find "$TOOLKIT_DIR" -type f | sort | while read -r f; do

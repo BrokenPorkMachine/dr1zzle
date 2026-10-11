@@ -1,6 +1,6 @@
 #!/bin/sh
 # Rust is the only Goat command implementation. Keep this stable repository
-# entrypoint so existing `./goat/goat ...` workflows do not depend on Python.
+# stable repository entrypoint for the Rust Goat binary.
 set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

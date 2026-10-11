@@ -140,7 +140,8 @@ and UART path for the RP2350 helper board. This path is intentionally separate
 from the Apple A11 `kload` loader:
 
 ```sh
-./goat/goat usbr34ker walkthrough
+./goat/goat usbr34ker                 # guided flash + CDC UART terminal
+./goat/goat usbr34ker walkthrough     # same guided flow
 ./goat/goat usbr34ker list
 ./goat/goat usbr34ker flash --board pico2
 ```

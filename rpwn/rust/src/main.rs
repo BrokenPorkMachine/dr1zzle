@@ -100,9 +100,43 @@ fn main() {
             "--decrypt-uid" => aes_uid(&arg, dfuexec::AES_DECRYPT),
             "--encrypt-uid" => aes_uid(&arg, dfuexec::AES_ENCRYPT),
             "--boot" => verbose_boot(),
+            "--goat-run" => goat_run(&arg),
+            "--goat-write" => goat_write(&arg),
             _ => unreachable!("unhandled option {}", opt),
         }
     }
+}
+
+fn goat_run(arg: &str) {
+    let mut words = Vec::new();
+    for raw in arg.split(',') {
+        let value = match raw.trim().strip_prefix("0x").or(raw.trim().strip_prefix("0X")) {
+            Some(x) => u64::from_str_radix(x, 16),
+            None => raw.trim().parse::<u64>(),
+        }.unwrap_or_else(|_| die(format!("ERROR: invalid execution word: {raw}")));
+        words.extend_from_slice(&value.to_le_bytes());
+    }
+    let device = PwnedDFUDevice::new();
+    device.execute(&words, 0);
+}
+
+fn goat_write(arg: &str) {
+    let mut parts = arg.splitn(3, ',');
+    let address = parts.next().and_then(|x| u64::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+        .unwrap_or_else(|| die("ERROR: --goat-write address must be hexadecimal."));
+    let path = parts.next().unwrap_or_else(|| die("ERROR: --goat-write needs address,file[,verify]."));
+    let verify = parts.next().map(|x| x != "0" && x != "false").unwrap_or(true);
+    let data = read_file(path).unwrap_or_else(|_| die(format!("ERROR: Could not read file: {path}")));
+    let device = PwnedDFUDevice::new();
+    for (offset, chunk) in data.chunks(0x1000).enumerate() {
+        let at = address + (offset * 0x1000) as u64;
+        device.write_memory(at, chunk);
+        if verify {
+            let got = device.read_memory(at, chunk.len());
+            if got != chunk { die(format!("ERROR: Goat readback mismatch at 0x{at:x}.")); }
+        }
+    }
+    println!("Goat wrote {} bytes at 0x{address:x}.", data.len());
 }
 
 // --- -p -------------------------------------------------------------------

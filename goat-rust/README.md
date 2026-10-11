@@ -10,10 +10,7 @@ Build with:
 cargo build --release --manifest-path goat-rust/Cargo.toml --locked
 ```
 
-The binary supports `usbr34ker list`, `usbr34ker flash`,
-`usbr34ker walkthrough`, `inspect <container>`, `verify <container>`,
-`unseal <container> --key-hex HEX`, and `pwn`. `verify` checks both the
-embedded certificate self-signature and the container signature using the
-certificate public key. `unseal` performs the same checks before decrypting.
-The Python files under `goat/` are retained only as historical protocol and
-test references; they are not an executable implementation or dispatch path.
+The binary supports key generation, sealing, inspection, verification,
+unsealing, ELF/raw image planning, TCP push/install/shell, RPWN handoff, and
+the bundled usbr34ker firmware workflow. All host-side Goat behavior is Rust;
+the `goat/` directory contains only payload assets and firmware.
