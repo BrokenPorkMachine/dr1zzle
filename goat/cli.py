@@ -35,6 +35,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from goat import aes, container, corpus, kload, rsa  # noqa: E402
+from goat import rp2350  # noqa: E402
 from goat.container import GOAT_DEFAULT_LOAD_BASE  # noqa: E402
 from goat.der import DerError  # noqa: E402
 from goat.usb import UsbError  # noqa: E402
@@ -584,6 +585,8 @@ def build_parser():
     sp.add_argument("--not-before", type=int, default=0)
     sp.add_argument("--not-after", type=int, default=4102444800)
     sp.set_defaults(func=cmd_keygen)
+
+    rp2350.add_parser(sub)
 
     sp = sub.add_parser("seal", help="wrap a payload into a container")
     sp.add_argument("image")
