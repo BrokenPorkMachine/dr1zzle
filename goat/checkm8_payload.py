@@ -215,11 +215,32 @@ def _elf_sections(blob):
     return section, symbols
 
 
-def assemble(src=PAYLOAD_SRC, clang="clang"):
+# The per-part constants the payload source reads, so one source assembles for
+# every measured build of a part. The A11 has two builds in the corpus and they
+# place the USB/context code at different addresses, so these have to move.
+DEFINES = {
+    "PROFILE_PIVOT": ("pivot", "0x%x"),
+    "PROFILE_CTX_ENTRY": ("ctx_entry", "0x%x"),
+    "PROFILE_READ_SCTLR": ("read_sctlr", "0x%x"),
+    "PROFILE_WRITE_TTBR0": ("write_ttbr0", "0x%x"),
+    "PROFILE_TLBI": ("tlbi", "0x%x"),
+    "PROFILE_DMB": ("dmb", "0x%x"),
+    "PROFILE_ROM_TTBR0": ("ttbr0", "0x%x"),
+    "PROFILE_ROM_VBAR": ("vbar", "0x%x"),
+}
+
+
+def assemble(src=PAYLOAD_SRC, clang="clang", profile=None):
     """Assemble the payload source, returning (section bytes, symbol dict)."""
+    cmd = [clang, "--target=aarch64-none-elf", "-c"]
+    if profile is not None:
+        for macro, (field, fmt) in sorted(DEFINES.items()):
+            cmd.append("-D%s=%s" % (macro, fmt % profile[field]))
+    cmd.append("-o")
     with tempfile.TemporaryDirectory() as tmp:
         obj = os.path.join(tmp, "payload.o")
-        proc = _run([clang, "--target=aarch64-none-elf", "-c", "-o", obj, src])
+        cmd += [obj, src]
+        proc = _run(cmd)
         if proc.returncode != 0:
             raise PayloadError("payload assembly failed:\n" + proc.stderr)
         with open(obj, "rb") as fh:
@@ -240,7 +261,7 @@ def build(profile, clang="clang"):
     placed where, because an image that is right for the wrong reason is still
     wrong.
     """
-    blob, sym = assemble(clang=clang)
+    blob, sym = assemble(clang=clang, profile=profile)
     code_end = max(addr for name, addr in sym.items()
                    if not name.startswith("fake_") and name not in
                    ("pivot_ctx", "payload_base", "gadget_table", "rom_ttbr0",

@@ -10,7 +10,7 @@ Subcommands:
     inspect   print a container without any key material
     verify    check a container's certificate and signature
     unseal    verify, decrypt and extract a payload from a container
-    pwn       run checkm8 on a DFU device (delegates to the vendored ipwndfu)
+    pwn       exploit a DFU device into pwndfu state (goat's own checkm8)
     send      boot an image on a pwndfu device (alias: kload)
     push      push a sealed container to a device goatloader over TCP
     install   stage a container and write it into a NAND firmware slot
@@ -274,14 +274,20 @@ def cmd_unseal(args):
 
 
 def cmd_pwn(args):
-    """Drive the vendored ipwndfu for the checkm8 step only.
+    """Exploit a DFU device into pwndfu state, with goat's own checkm8.
 
-    Everything after this point is goat's own transport; this exists because
-    the exploit itself is a large, well-tested body of work that has nothing
-    to do with loading images.
+    The exploit is this project's implementation of the published checkm8 bug
+    (goat/checkm8.py), on this project's own transport, with constants
+    measured per build from the SecureROM images in the corpus. It does not
+    run the vendored tool and does not take its constants from it.
+
+    `--dry-run` prints the plan for the attached device and exits, which is
+    the answer to "which firmware do I need for this part" before the device
+    is touched.
     """
     from goat.pwn import checkm8
-    return checkm8(args.ipwndfu_dir)
+    return checkm8(verbose=getattr(args, "verbose", False),
+                   dry_run=getattr(args, "dry_run", False))
 
 
 def _open_pwndfu():
@@ -290,48 +296,17 @@ def _open_pwndfu():
     return PwnedDFU(usb)
 
 
-def _acquire_pwndfu(timeout=5.0, auto_pwn=False, ipwndfu_dir="ipwndfu"):
+def _acquire_pwndfu(timeout=5.0, auto_pwn=False, verbose=False):
     """Open a device that is in pwndfu state, exploiting it first if allowed.
 
     With auto_pwn, a device that is only in DFU is run through checkm8 before
     the image is sent, which is what makes `goat kload` one command instead of
-    an exploit step and a boot step.
+    an exploit step and a boot step. The exploit runs here rather than in this
+    function: goat/pwn.py owns the whole "which firmware, which method, and did
+    it leave the device pwndfu" question.
     """
-    from goat.pwn import checkm8
-    from goat.usb import PwnedDFU, LibusbDeviceList
-
-    usb = LibusbDeviceList()
-    if not usb.dfu_present():
-        raise UsbError("no Apple device in DFU (05ac:1227). Put the device in "
-                       "DFU mode, then run 'goat kload' again.")
-
-    dev = None
-    failure = None
-    try:
-        dev = PwnedDFU(usb, timeout)
-    except UsbError as exc:
-        failure = exc
-    if dev is not None and "PWND:[checkm8]" in dev.serial:
-        return dev
-
-    if dev is not None:
-        dev.close()
-    if failure is not None:
-        # The device is there but could not be opened. Exploiting something we
-        # know nothing about is not the fix, so report what the open said.
-        raise failure
-    if not auto_pwn:
-        raise UsbError("device is in DFU but not pwndfu. Run 'goat pwn' first, "
-                       "or pass --pwn to let kload exploit it.")
-    print("goat: device is in DFU but not pwndfu, running checkm8")
-    if checkm8(ipwndfu_dir) != 0:
-        raise UsbError("checkm8 did not leave the device in pwndfu state")
-    dev = PwnedDFU(usb, max(timeout, 10.0))
-    if "PWND:[checkm8]" not in dev.serial:
-        dev.close()
-        raise UsbError("device came back in DFU but not pwndfu")
-    print("goat: device is pwndfu")
-    return dev
+    from goat.pwn import acquire_pwndfu
+    return acquire_pwndfu(auto_pwn=auto_pwn, verbose=verbose, timeout=timeout)
 
 
 def _container_key(parsed, args):
@@ -375,7 +350,8 @@ def cmd_send(args):
     if image.note:
         print("goat: %s" % image.note)
 
-    dev = _acquire_pwndfu(auto_pwn=args.pwn, ipwndfu_dir=args.ipwndfu_dir)
+    dev = _acquire_pwndfu(auto_pwn=args.pwn,
+                            verbose=getattr(args, "verbose", False))
     try:
         print("goat: device serial: %s" % dev.serial)
         print("goat: writing %d bytes to 0x%x" % (image.size, image.load_base))
@@ -618,8 +594,12 @@ def build_parser():
     sp.add_argument("--out", default=None)
     sp.set_defaults(func=cmd_unseal)
 
-    sp = sub.add_parser("pwn", help="run checkm8 via the vendored ipwndfu")
-    sp.add_argument("--ipwndfu-dir", default="ipwndfu")
+    sp = sub.add_parser("pwn", help="exploit a DFU device into pwndfu state")
+    sp.add_argument("--dry-run", action="store_true",
+                    help="print the plan for the attached device and exit "
+                         "without touching it")
+    sp.add_argument("-v", "--verbose", action="store_true",
+                    help="print each stage as it runs")
     sp.set_defaults(func=cmd_pwn)
 
     for name in ("send", "kload"):
@@ -643,7 +623,6 @@ def build_parser():
                              "(default)")
         sp.add_argument("--no-pwn", dest="pwn", action="store_false",
                         help="require a device that is already pwndfu")
-        sp.add_argument("--ipwndfu-dir", default="ipwndfu")
         sp.add_argument("--wait", type=float, default=kload.DEFAULT_WAIT,
                         help="seconds to watch for the handoff (0 = do not "
                         "wait)")
