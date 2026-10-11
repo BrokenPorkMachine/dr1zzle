@@ -20,7 +20,7 @@
  * is not a formality: it stops an image being built against a map it does not
  * have.
  *
- * TIER: host. ipwndfu/device_platform.py gives the geometry and identity
+ * TIER: host. rpwn/rust/src/device_platform.rs gives the geometry and identity
  * above, and iphem-soc records two A10-specific memory measurements below.
  * There is no A10 peripheral register map in this tree: the reference
  * project's SoC configs cover T8015/T8020/T8027/T8030/T8101/S8000/A7/A8 and
@@ -47,7 +47,7 @@
     (SOC_BLK_ROM | SOC_BLK_SRAM | SOC_BLK_DRAM)
 
 /* ----------------------------------------------------------------------- */
-/* Memory layout — from ipwndfu/device_platform.py                        */
+/* Memory layout — from rpwn/rust/src/device_platform.rs                        */
 /* ----------------------------------------------------------------------- */
 
 #define SOC_T8010_SRAM_BASE          0x180000000ULL
@@ -80,7 +80,7 @@
 #define SOC_T8010_DRAM_WORK_BASE     0x200000000ULL
 
 /* ----------------------------------------------------------------------- */
-/* Exploit geometry — from ipwndfu/device_platform.py                     */
+/* Exploit geometry — from rpwn/rust/src/device_platform.rs                     */
 /* ----------------------------------------------------------------------- */
 
 #define SOC_T8010_DFU_IMAGE_BASE     0x1800B0000ULL

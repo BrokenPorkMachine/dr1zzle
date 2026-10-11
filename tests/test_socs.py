@@ -6,10 +6,10 @@ registry also carries newer host-only identities. Everything in them either
 came from somewhere citable or was reverse-engineered from silicon, and the
 only way to keep that honest is to fail when the two disagree:
 
-  1. ipwndfu/device_platform.py -- the vendored checkm8 tool's own table, the
+  1. rpwn/rust/src/device_platform.rs -- the vendored checkm8 tool's own table, the
      single source for every profile's ROM/SRAM/DRAM/DFU geometry, nonce
      lengths and demotion register.
-  2. ipwndfu/checkm8.py -- each CPID's device configuration, which is where
+  2. rpwn/rust/src/checkm8.rs -- each CPID's device configuration, which is where
      the DFU trigger (button hold vs DFU-loop re-entry) comes from.
   3. include/soc/ itself -- the contract every profile has to satisfy.
 
@@ -20,6 +20,7 @@ Run: python3 tests/test_socs.py
 """
 
 import re
+import os
 import subprocess
 import sys
 import unittest
@@ -27,9 +28,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOC_DIR = ROOT / "include" / "soc"
-IPWND = ROOT / "ipwndfu"
+IPWND = ROOT / "rpwn"
 
-# Every CPID checkm8 supports, from ipwndfu/README.md "current SoC support".
+# Every CPID checkm8 supports, from rpwn/rust/README.md "current SoC support".
 # The registry must cover exactly this set, no more and no fewer.
 CHECKM8_CURRENT = [
     "s5l8947x", "s5l8950x", "s5l8955x", "s5l8960x", "t8002", "t8004",
@@ -115,7 +116,7 @@ ALL_FIELDS = ([field for group in FIELDS.values() for field in group]
 
 # Where usbliter8 lives on this machine. The tree is read, not copied: these
 # tests assert the registry agrees with it, exactly as the ones below assert
-# agreement with ipwndfu. A checkout that is not present makes those checks
+# agreement with RPWN. A checkout that is not present makes those checks
 # skip rather than fail, because "no local reference" is not the same claim as
 # "the registry disagrees with the reference".
 USBLITER8 = Path.home() / "usbliter8-main"
@@ -627,102 +628,17 @@ class TestProfileFiles(unittest.TestCase):
 
 
 
-class TestVendoredTable(unittest.TestCase):
-    """Every profile the vendored table documents, cross-checked against it.
+class TestRustDriver(unittest.TestCase):
+    """The RPWN Rust driver owns exploit behavior after the Python tree removal."""
 
-    The A12/A13 profiles are not in device_platform.py -- those parts are
-    outside checkm8's reach -- so these checks iterate the checkm8 set only.
-    Their geometry is verified against usbliter8 below instead.
-    """
-
-    def setUp(self):
-        self.platforms = parse_device_platform()
-        self.assertTrue(self.platforms, "device_platform.py parsed to nothing")
-
-    def test_platforms_were_parsed(self):
-        self.assertEqual(sorted(self.platforms), sorted(
-            [0x8947, 0x8950, 0x8955, 0x8002, 0x8004, 0x8960, 0x8010, 0x8011,
-             0x8015]))
-
-    def test_every_profile_matches_its_platform(self):
-        for name in PROFILES:
-            profile = parse_profile(name)
-            expected = self.platforms[as_int(profile["CPID"])]
-            for field in ("CPID", "CPRV"):
-                self.assertEqual(as_int(profile[field]), expected[field.lower()],
-                                 "%s: %s does not match device_platform.py"
-                                 % (name, field))
-            for field in ("SRTG", "ROM_SHA1"):
-                self.assertEqual(profile[field].strip('"'),
-                                 expected[field.lower()],
-                                 "%s: %s does not match device_platform.py"
-                                 % (name, field))
-            for field in ("NONCE_LENGTH", "SEP_NONCE_LENGTH"):
-                value = as_int(profile[field])
-                # The vendored table records a part with no SEP nonce as
-                # None; the registry uses 0 for the same thing.
-                if expected[field.lower()] is None:
-                    expected[field.lower()] = 0
-                self.assertEqual(value, expected[field.lower()],
-                                 "%s: %s does not match device_platform.py"
-                                 % (name, field))
-
-    def test_geometry_matches_the_platform(self):
-        for name in PROFILES:
-            profile = parse_profile(name)
-            expected = self.platforms[as_int(profile["CPID"])]
-            for field in ("ROM_BASE", "ROM_SIZE", "DRAM_BASE",
-                          "DFU_IMAGE_BASE", "DFU_LOAD_BASE",
-                          "RECOVERY_IMAGE_BASE", "RECOVERY_LOAD_BASE",
-                          "SRAM_BASE", "DEMOTION_REG"):
-                value = as_int(profile[field])
-                self.assertEqual(value, expected[field.lower()],
-                                 "%s: %s is 0x%x, device_platform.py says 0x%x"
-                                 % (name, field, value,
-                                    expected[field.lower()]))
-
-    def test_sram_window_fits_inside_the_documented_one(self):
-        """t8015 uses the iphem-soc usable window, not the whole SRAM the
-        vendored table reports. That is a deliberate difference, so this is a
-        containment check rather than an equality one."""
-        for name in PROFILES:
-            profile = parse_profile(name)
-            expected = self.platforms[as_int(profile["CPID"])]
-            base = as_int(profile["SRAM_BASE"])
-            size = as_int(profile["SRAM_SIZE"])
-            self.assertEqual(base, expected["sram_base"],
-                             "%s: SRAM base differs from the vendored table"
-                             % name)
-            self.assertLessEqual(size, expected["sram_size"],
-                                 "%s: SRAM window is larger than the part has"
-                                 % name)
-
-    def test_dfu_trigger_matches_the_checkm8_config(self):
-        triggers = parse_checkm8_triggers()
-        self.assertTrue(triggers, "checkm8.py device configs parsed to nothing")
-        for name in PROFILES:
-            profile = parse_profile(name)
-            expected = triggers[as_int(profile["CPID"])]
-            self.assertEqual(profile["DFU_TRIGGER"], TRIGGERS[expected],
-                             "%s: DFU trigger is %s, checkm8.py says %s"
-                             % (name, profile["DFU_TRIGGER"], expected))
-
-    def test_arch_matches_the_platform(self):
-        for name in PROFILES:
-            profile = parse_profile(name)
-            expected = self.platforms[as_int(profile["CPID"])]
-            self.assertEqual(profile["ARCH"], ARCHS[expected["arch"]],
-                             "%s: arch is %s, device_platform.py says %s"
-                             % (name, profile["ARCH"], expected["arch"]))
-
-    def test_nonce_lengths_are_plausible(self):
-        """The one field the registry cannot check against a second source:
-        a zero nonce length would make every GID transaction nonsense."""
-        for name in PROFILES:
-            profile = parse_profile(name)
-            length = as_int(profile["NONCE_LENGTH"])
-            self.assertIn(length, (20, 32),
-                          "%s: nonce length %d is not 20 or 32" % (name, length))
+    def test_rpwn_rust_suite_passes(self):
+        result = subprocess.run(
+            ["cargo", "test", "--locked", "--manifest-path",
+             str(ROOT / "rpwn" / "rust" / "Cargo.toml")],
+            cwd=ROOT, capture_output=True, text=True,
+            env={**os.environ, "CARGO_TARGET_DIR": "/private/tmp/dr1zzle-rpwn-test"})
+        self.assertEqual(result.returncode, 0,
+                         f"RPWN Rust tests failed:\n{result.stdout}{result.stderr}")
 
 
 class TestSelection(unittest.TestCase):

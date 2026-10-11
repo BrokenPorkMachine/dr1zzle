@@ -5,7 +5,7 @@
  * T8020 (A12) SoC profile — AArch64, host tier.
  *
  * The first part in this registry that checkm8 does *not* reach. The bug the
- * vendored ipwndfu implements was fixed in the A12's SecureROM, so the ten
+ * vendored rpwn implements was fixed in the A12's SecureROM, so the ten
  * checkm8 profiles above end here and this one begins.
  *
  * It is not unreachable, though: usbliter8 (a 2025 bootrom exploit against a

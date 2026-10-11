@@ -1,5 +1,5 @@
 //! A faithful reimplementation of Python's `getopt.getopt` for the exact option table the
-//! `ipwndfu` script uses.
+//! `rpwn` script uses.
 //!
 //! Behavioural details that are preserved because the original relies on them:
 //!   * long options may be spelled with one or two leading dashes;

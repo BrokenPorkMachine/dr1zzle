@@ -21,7 +21,7 @@
 ### 1.1 Discrepancy
 | Source | Address | Evidence |
 |--------|---------|----------|
-| `include/soc/t8015.h:116` | `0x23C000000` | Inherited from `ipwndfu/device_platform.py` (geometry-only, no peripheral map) |
+| `include/soc/t8015.h:116` | `0x23C000000` | Inherited from `rpwn/rust/src/device_platform.rs` (geometry-only, no peripheral map) |
 | AGENTS.md 2026-10-01 | `0x243000000` | 8-byte literal at file offset `0x1c190` in `SecureROM_t8015si_iBoot-3332.0.0.1.23.bin` |
 
 ### 1.2 Action

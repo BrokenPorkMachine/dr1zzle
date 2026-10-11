@@ -202,7 +202,7 @@
 /* Exploit geometry (checkm8)                                              */
 /* ----------------------------------------------------------------------- */
 
-/* From ipwndfu/device_platform.py for cpid 0x8015, cross-checked against
+/* From rpwn/rust/src/device_platform.rs for cpid 0x8015, cross-checked against
  * checkm8.py's device configuration. Everything in this block is a *host*
  * value: it is what places an image and what `goat pull` reads, and it is
  * independent of the peripheral map above. */

@@ -74,7 +74,7 @@ cargo build --release --target aarch64-unknown-none
 
 ### Acceptance Criteria ✅
 ```
-Device in DFU → ipwndfu -l payload.bin
+Device in DFU → rpwn -f payload.bin
 → UART: "=== A11 Research Payload ==="
 → UART: "research> "
 → Type "help" → command list
@@ -397,7 +397,7 @@ Phase 7 (Host tool, CI, Docs) ← depends on all
 | Resource | Specification |
 |----------|---------------|
 | **Hardware** | iPhone 8/X (A11) in DFU, USB-A host port (Pico/Mac/Linux) |
-| **Software** | Rust 1.75+, `aarch64-unknown-none`, `ipwndfu`, `telnet` |
+| **Software** | Rust 1.75+, `aarch64-unknown-none`, `rpwn`, `telnet` |
 | **Reference Code** | iphemeral repo (local), pongoOS (GitHub, read-only) |
 | **Documentation** | ARM DDI 0487, DWC2 spec, xnu source (register values only) |
 

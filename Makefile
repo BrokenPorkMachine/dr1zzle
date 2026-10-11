@@ -400,7 +400,7 @@ size: $(BUILD_DIR)/$(TARGET).elf
 
 # Portable, budget-enforced QEMU hardware profiles (separate from A11 payload).
 PROFILE ?= small
-.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test sep-test soc-test ipwndfu-test menu-test
+.PHONY: profiles profiles-test profiles-qemu host-test phase4-test goat-test loader-test sep-test soc-test rpwn-test menu-test
 profiles:
 	$(MAKE) -f boards/Makefile PROFILE=$(PROFILE)
 profiles-test:
@@ -437,10 +437,9 @@ sep-test:
 soc-test:
 	python3 tests/test_socs.py
 
-# The vendored checkm8 tree (ipwndfu/) runs under Python 3 now that no
-# current macOS ships a Python 2. These keep it that way.
-ipwndfu-test:
-	python3 tests/test_ipwndfu.py
+# RPWN is the Rust-native DFU driver; keep its byte-level suite in the host checks.
+rpwn-test:
+	cargo test --locked --manifest-path rpwn/rust/Cargo.toml
 
 # Host test for the on-screen menu: panel/pane layout and bounded scrolling.
 menu-test:

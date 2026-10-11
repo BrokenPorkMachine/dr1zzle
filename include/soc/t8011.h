@@ -12,7 +12,7 @@
  *
  * That last point is the load-bearing one. SRTG is what the host matches a
  * device against, so a profile with a sibling's SRTG silently attaches to
- * nothing. Everything below is per-part, from ipwndfu/device_platform.py.
+ * nothing. Everything below is per-part, from rpwn/rust/src/device_platform.rs.
  *
  * TIER: host, and for the same reason as the A10 — no peripheral register
  * map for this part exists in this tree, and it is not derived from the A10's
@@ -35,7 +35,7 @@
     (SOC_BLK_ROM | SOC_BLK_SRAM | SOC_BLK_DRAM)
 
 /* ----------------------------------------------------------------------- */
-/* Memory layout — from ipwndfu/device_platform.py                        */
+/* Memory layout — from rpwn/rust/src/device_platform.rs                        */
 /* ----------------------------------------------------------------------- */
 
 #define SOC_T8011_SRAM_BASE          0x180000000ULL
@@ -47,7 +47,7 @@
 #define SOC_T8011_DRAM_BASE          0x800000000ULL
 
 /* ----------------------------------------------------------------------- */
-/* Exploit geometry — from ipwndfu/device_platform.py                     */
+/* Exploit geometry — from rpwn/rust/src/device_platform.rs                     */
 /* ----------------------------------------------------------------------- */
 
 #define SOC_T8011_DFU_IMAGE_BASE     0x1800B0000ULL

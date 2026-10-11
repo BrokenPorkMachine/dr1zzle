@@ -149,7 +149,7 @@ class TestPwnPreflight(unittest.TestCase):
         self.assertEqual(pwn.USBLITER8_CPIDS, {0x8020, 0x8030})
         self.assertNotIn(0x8027, pwn.USBLITER8_CPIDS)
 
-    def test_unreachable_cpid_is_refused_before_ipwndfu(self):
+    def test_unreachable_cpid_is_refused_before_rpwn(self):
         class Device:
             serial = "CPID:8020 CPRV:11"
 
@@ -567,7 +567,7 @@ class TestAcquire(unittest.TestCase):
 
         calls = []
 
-        def fake_checkm8(directory="ipwndfu"):
+        def fake_checkm8(directory="rpwn"):
             calls.append(directory)
             return checkm8_result
 
@@ -600,7 +600,7 @@ class TestAcquire(unittest.TestCase):
         (ok, result), made, calls = self.acquire(**args)
         self.assertTrue(ok, result)
         self.assertEqual(result.endswith("PWND:[checkm8]"), True)
-        self.assertEqual(calls, ["ipwndfu"])           # checkm8 ran once
+        self.assertEqual(calls, ["rpwn"])           # checkm8 ran once
         self.assertEqual(made["devices"], 2)           # reopened afterwards
 
     def test_dfu_only_device_is_refused_without_pwn(self):
@@ -617,7 +617,7 @@ class TestAcquire(unittest.TestCase):
         (ok, message), _, calls = self.acquire(**args)
         self.assertFalse(ok)
         self.assertIn("checkm8", message)
-        self.assertEqual(calls, ["ipwndfu"])
+        self.assertEqual(calls, ["rpwn"])
 
     def test_no_device_in_dfu_is_reported_plainly(self):
         (ok, message), made, calls = self.acquire(present=False)

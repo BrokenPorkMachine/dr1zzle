@@ -138,7 +138,7 @@
  * exploit path is known to this tree for the part, which is what makes an
  * A12X refuse cleanly rather than be attempted and fail. */
 #define SOC_EXPLOIT_NONE       0
-#define SOC_EXPLOIT_CHECKM8    1   /* ipwndfu, over a Mac's own USB stack */
+#define SOC_EXPLOIT_CHECKM8    1   /* rpwn, over a Mac's own USB stack */
 #define SOC_EXPLOIT_USBLITER8  2   /* needs an RP2350 as the USB host */
 
 /* ----------------------------------------------------------------------- */

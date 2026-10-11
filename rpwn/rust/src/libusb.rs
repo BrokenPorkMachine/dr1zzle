@@ -1,4 +1,4 @@
-//! Thin wrapper over libusb-1.0 mirroring exactly the pyusb calls that ipwndfu uses.
+//! Thin wrapper over libusb-1.0 mirroring exactly the pyusb calls that rpwn uses.
 //!
 //! The Python original drives the device through pyusb's libusb1 backend. The exploit
 //! paths in `checkm8` / `limera1n` reach below pyusb into raw libusb (async control

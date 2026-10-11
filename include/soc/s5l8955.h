@@ -4,8 +4,8 @@
 /*
  * S5L8955 SoC profile — 32-bit (ARMv7s), host tier.
  *
- * One of the ten CPIDs checkm8 supports (ipwndfu/README.md, "current SoC
- * support"). Geometry from ipwndfu/device_platform.py; no peripheral map, and
+ * One of the ten CPIDs checkm8 supports (rpwn/rust/README.md, "current SoC
+ * support"). Geometry from rpwn/rust/src/device_platform.rs; no peripheral map, and
  * an ARMv7s CPU — see include/soc/s5l8947.h for why neither on its own is
  * survivable.
  */

@@ -14,7 +14,7 @@ between SoCs lives in one per-SoC header under `include/soc/`, and
 
 ## What is in it
 
-The registry contains the ten CPIDs checkm8 supports — `ipwndfu/README.md`,
+The registry contains the ten CPIDs checkm8 supports — `rpwn/rust/README.md`,
 "current SoC support" — plus the newer T8020/T8021/T8027/T8030 identities
 named by the usbliter8 reference tree. The latter are host-only records: this
 repository does not build or run their device-side code. S5L8960 covers both
@@ -72,7 +72,7 @@ about it:
 rather than letting a driver fail on a base that was never measured.
 
 That is not a judgement about the Silicon, it is a statement about this tree:
-every base listed above came from `ipwndfu/device_platform.py`, which
+every base listed above came from `rpwn/rust/src/device_platform.rs`, which
 documents ROM, SRAM, DRAM and DFU geometry and nothing else. A payload needs a
 console, and a console needs a register base, so a geometry-only profile
 cannot become an image.
@@ -216,7 +216,7 @@ and a new `#elif` in `include/soc.h`, not a driver edit.
 
 ## What is not here
 
-`ipwndfu/README.md` lists a "future SoC support" line: s5l8940x, s5l8942x,
+`rpwn/rust/README.md` lists a "future SoC support" line: s5l8940x, s5l8942x,
 s5l8945x, s5l8747x, t7000, t7001, s7002, s8000, s8001, s8003, t8012. Those have
 no entry in `device_platform.py`, so there is no geometry to record and no
 profile was written for them. t8016 — the other A11 CPID, in the iPhone 8 Plus
@@ -245,14 +245,14 @@ that are supposed to be authoritative for it:
   from the ones the tree was built against;
 - exploit-family fields agree with the checkm8 and usbliter8 reference trees,
   while the T8021 stub is prevented from acquiring unsourced geometry;
-- the geometry in each profile matches `ipwndfu/device_platform.py`, so a
+- the geometry in each profile matches `rpwn/rust/src/device_platform.rs`, so a
   transcription error in either direction fails the test rather than a device;
 - each part's PMGR band contains its own SEP power word — the check that
   caught the A12's wrong `0x20e000000` PMGR, and the reason a profile that is
   self-consistent can still be caught being wrong;
 - the SEP fields are carried exactly where a source establishes them, per field
   rather than per profile, so "unrecorded" cannot quietly become zero;
-- the DFU trigger matches `ipwndfu/checkm8.py`'s per-CPID device configuration;
+- the DFU trigger matches `rpwn/rust/src/checkm8.rs`'s per-CPID device configuration;
 - exactly one profile is payload tier, and it maps every block in
   `SOC_BLK_PAYLOAD`;
 - `make SOC=<name>` compiles for the payload tier and is refused, with the
