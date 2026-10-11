@@ -87,7 +87,6 @@ def _rpwn_binary():
     candidates.extend((
         os.path.join(root, "rpwn", "rust", "target", "release", "rpwn"),
         os.path.join(root, "RPWN", "target", "release", "rpwn"),
-        os.path.join(root, "ipwndfu", "rust", "target", "release", "rpwn"),
     ))
     for candidate in candidates:
         if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):

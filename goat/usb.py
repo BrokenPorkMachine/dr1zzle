@@ -1,7 +1,7 @@
 """libusb transport and the pwndfu (checkm8) command channel.
 
 This is the loader half: it puts bytes into device memory and tells the device
-to run them, with no dependency on the vendored ipwndfu (which only supplies
+to run them, with no dependency on the legacy Python driver (RPWN supplies
 the checkm8 exploit step). The wire format is dfu.py's control-transfer
 sequence plus usbexec.py's command/response framing, both of which are the
 DFU command channel the checkm8 patch installs:
@@ -13,7 +13,7 @@ DFU command channel the checkm8 patch installs:
 
 A "device in pwndfu" means the SecureROM has already been exploited (checkm8)
 and re-enumerated with the patched serial number. goat does not perform the
-exploit itself -- see the `pwn` command, which drives the vendored ipwndfu for
+exploit itself -- see the `pwn` command, which uses Rust RPWN for
 that one step only.
 """
 

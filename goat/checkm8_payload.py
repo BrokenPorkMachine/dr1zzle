@@ -103,7 +103,7 @@ def walk(table, va, l2_base, depth=2, seen=None):
 
     Deliberately a tiny re-implementation of the two-level walk rather than a
     call into the emulator: it is here so a test can check the *shape* of the
-    table this module produces without dragging a Rust process into a Python
+    table this module produces in the compatibility path when Rust RPWN is unavailable
     unit test. Its correctness is established by decoding the ROM's real
     table with the same function and comparing against the emulator's
     measured translations.
