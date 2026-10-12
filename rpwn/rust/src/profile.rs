@@ -415,8 +415,66 @@ pub const ANALYSIS_A10: &[(&str, u64)] = &[
 
 /// Which exploit reaches a CPID. checkm8 ends with the A11; usbliter8 covers
 /// the A12 and A13 and needs an RP2350 in the cable, which this host is not.
+///
+/// T8027 (0x8027) and T8021 (0x8021) are deliberately absent: the SoC registry
+/// in `include/soc/` marks both `SOC_EXPLOIT_NONE` ("no public exploit can
+/// reach it"), and usbliter8 describes T8027 as theoretical rather than
+/// implemented. They are not checkm8 parts either, so they fall to
+/// `Reach::Unsupported` rather than being quietly claimed.
 pub const USBLITER8_CPIDS: &[u32] = &[0x8020, 0x8030];
 pub const USBLITER8_HARDWARE: &str = "an RP2350 board (e.g. Raspberry Pi Pico 2) as the USB host";
+
+/// What this tool can actually do about a part.
+///
+/// One classification, defined here, so a caller that has to decide "run the
+/// exploit / send them to the helper board / refuse" cannot disagree with the
+/// dispatcher that will later run it. The `goat` host tool asked this question
+/// with its own hand-written CPID lists, and they disagreed with this crate in
+/// both directions: they claimed parts `run_usb_exploit` pwns were
+/// "unsupported", and claimed a usbr34ker part `USBLITER8_CPIDS` excludes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// checkm8 (or one of its relatives) reaches it over this host's own USB stack.
+    Checkm8,
+    /// usbliter8 reaches it, and it needs `USBLITER8_HARDWARE` in the cable.
+    Usbliter8,
+    /// Nothing in this tree reaches it.
+    Unsupported,
+}
+
+/// The CPIDs `run_usb_exploit` routes to a checkm8-family exploit.
+///
+/// This mirrors the dispatch chain in `main.rs`; the test asserts the two agree
+/// for every CPID the registry knows, so a new route cannot be added to one
+/// and forgotten in the other.
+pub const CHECKM8_CPIDS: &[u32] = &[
+    0x8720, // steaks4uce
+    0x8920, 0x8922, // limera1n
+    0x8930, // shatter
+    0x8947, 0x8950, 0x8955, 0x8960, 0x8002, 0x8004, 0x8010, 0x8011, 0x8015,
+];
+
+/// Which exploit family reaches `cpid`.
+///
+/// Defined from the CPID rather than from a serial, because CPID is the part
+/// identity; the SRTG selects a *build* within one and never changes reach.
+pub fn reach_for_cpid(cpid: u32) -> Reach {
+    if CHECKM8_CPIDS.contains(&cpid) {
+        Reach::Checkm8
+    } else if USBLITER8_CPIDS.contains(&cpid) {
+        Reach::Usbliter8
+    } else {
+        Reach::Unsupported
+    }
+}
+
+/// [`reach_for_cpid`] for a DFU serial string.
+pub fn reach_for_serial(serial: &str) -> Reach {
+    match parse_serial(serial).cpid {
+        Some(cpid) => reach_for_cpid(cpid),
+        None => Reach::Unsupported,
+    }
+}
 
 /// The identity a DFU serial string carries.
 #[derive(Clone, Debug, Default)]

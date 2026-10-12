@@ -789,3 +789,239 @@ fn image3_rejects_a_truncated_header_clearly() {
         message
     );
 }
+
+// ---------------------------------------------------------------------------
+// reachability: the one classifier, cross-checked against the SoC registry
+// ---------------------------------------------------------------------------
+
+/// One `(cpid, exploit)` pair read from a registry header in `include/soc/`.
+///
+/// The C headers are the independent authority here. Deriving the expectation
+/// from `CHECKM8_CPIDS` itself would make these tests unable to fail in the
+/// direction that matters: a CPID *missing* from that list is exactly the bug
+/// this exists to catch, and a list-driven assertion never looks for it. (A
+/// mutation that deleted 0x8930 from the list left a list-driven test green.)
+fn soc_registry() -> Vec<(u32, String)> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../include/soc");
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("SoC registry not readable at {}: {e}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("h") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("registry header readable");
+        let grab = |key: &str| {
+            text.lines()
+                .find(|l| l.contains(key))
+                .and_then(|l| l.split_whitespace().last())
+                .map(|v| v.to_string())
+        };
+        let (Some(cpid), Some(exploit)) = (grab("_CPID"), grab("_EXPLOIT")) else {
+            continue;
+        };
+        // The headers spell these `0x8020u`: a C hex literal with a `u` suffix.
+        // `from_str_radix` takes neither the `0x` prefix nor the suffix, so
+        // strip both here rather than trimming only the suffix -- trimming the
+        // suffix alone leaves `0x8020`, which fails to parse and reads as a
+        // corrupt registry rather than as a spelling mistake in the reader.
+        let digits = cpid
+            .trim_end_matches(['u', 'U'])
+            .trim_start_matches("0x")
+            .trim_start_matches("0X");
+        let cpid = u32::from_str_radix(digits, 16)
+            .unwrap_or_else(|_| panic!("unparsable CPID {cpid:?} in {}", path.display()));
+        out.push((cpid, exploit));
+    }
+    assert!(
+        out.len() >= 13,
+        "expected the full registry, parsed only {} headers from {}",
+        out.len(),
+        dir.display()
+    );
+    out
+}
+
+fn serial_for(cpid: u32) -> String {
+    format!("CPID:{cpid:04X} CPRV:22 CPFM:03 SCEP:01 BDID:06")
+}
+
+/// Map a registry `SOC_EXPLOIT_*` token to the classifier's answer.
+fn expected_reach(exploit: &str) -> crate::profile::Reach {
+    use crate::profile::Reach;
+    // The header spells these `SOC_EXPLOIT_CHECKM8`; compare on the suffix so a
+    // change to the macro prefix is not read as a new exploit token.
+    match exploit.strip_prefix("SOC_EXPLOIT_").unwrap_or(exploit) {
+        "CHECKM8" => Reach::Checkm8,
+        "USBLITER8" => Reach::Usbliter8,
+        "NONE" => Reach::Unsupported,
+        other => panic!("registry grew a new exploit token {other:?}; update this test"),
+    }
+}
+
+#[test]
+fn the_registry_reader_reads_the_headers_it_claims_to() {
+    // `soc_registry` is what the reachability test trusts, so it gets its own
+    // check: it must find both arms and both NONE parts, not just any rows.
+    let registry = soc_registry();
+    let exploit_of = |cpid: u32| {
+        registry
+            .iter()
+            .find(|(c, _)| *c == cpid)
+            .map(|(_, e)| e.as_str())
+            .unwrap_or_else(|| panic!("registry reader did not find CPID 0x{cpid:04x}"))
+    };
+    assert_eq!(exploit_of(0x8015), "SOC_EXPLOIT_CHECKM8");
+    assert_eq!(exploit_of(0x8020), "SOC_EXPLOIT_USBLITER8");
+    assert_eq!(exploit_of(0x8030), "SOC_EXPLOIT_USBLITER8");
+    assert_eq!(exploit_of(0x8027), "SOC_EXPLOIT_NONE");
+    assert_eq!(exploit_of(0x8021), "SOC_EXPLOIT_NONE");
+}
+
+#[test]
+fn the_reachability_classifier_agrees_with_the_soc_registry() {
+    use crate::profile::reach_for_serial;
+
+    // Positive control: without it, a classifier returning Unsupported for
+    // everything would pass the registry comparison below.
+    assert_eq!(
+        crate::profile::reach_for_serial(&serial_for(0x8015)),
+        crate::profile::Reach::Checkm8,
+        "the A11 must classify as checkm8, or the registry comparison is vacuous"
+    );
+
+    let registry = soc_registry();
+    for (cpid, exploit) in registry {
+        assert_eq!(
+            reach_for_serial(&serial_for(cpid)),
+            expected_reach(&exploit),
+            "CPID 0x{cpid:04x} is SOC_EXPLOIT_{exploit} in include/soc/ and must classify the same way"
+        );
+    }
+}
+
+#[test]
+fn every_registry_cp_id_is_classified_explicitly_rather_than_by_default() {
+    // The registry names a CPID this classifier has never heard of exactly when
+    // a new part lands. `Unsupported` is the right answer for a part no exploit
+    // reaches, but only once someone has looked; this asserts the CPIDs were
+    // seen, so adding a header without a decision is visible.
+    let registry = soc_registry();
+    for (cpid, _) in &registry {
+        assert!(
+            crate::profile::parse_serial(&serial_for(*cpid)).cpid == Some(*cpid),
+            "registry CPID 0x{cpid:04x} does not survive a serial round-trip"
+        );
+    }
+    assert!(
+        registry.iter().any(|(c, _)| *c == 0x8015),
+        "the registry parse must find the A11 or it is reading the wrong files"
+    );
+}
+
+#[test]
+fn a_part_the_registry_marks_none_is_refused_rather_than_claimed() {
+    // T8027 and T8021 carry SOC_EXPLOIT_NONE ("no public exploit can reach it",
+    // docs/SOCS.md). The `goat` host tool listed T8027 as a usbr34ker part;
+    // this is the claim that pins.
+    use crate::profile::{reach_for_cpid, Reach, CHECKM8_CPIDS, USBLITER8_CPIDS};
+
+    for cpid in [0x8027u32, 0x8021] {
+        assert_eq!(reach_for_cpid(cpid), Reach::Unsupported);
+        assert!(
+            !CHECKM8_CPIDS.contains(&cpid),
+            "CPID 0x{cpid:04x} carries SOC_EXPLOIT_NONE but is in CHECKM8_CPIDS"
+        );
+        assert!(
+            !USBLITER8_CPIDS.contains(&cpid),
+            "CPID 0x{cpid:04x} carries SOC_EXPLOIT_NONE but is in USBLITER8_CPIDS"
+        );
+    }
+}
+
+#[test]
+fn a_serial_without_a_cpid_is_unsupported_not_a_guess() {
+    use crate::profile::{reach_for_serial, Reach};
+
+    for serial in ["", "garbage", "CPID:", "CPID:ZZZZ"] {
+        assert_eq!(
+            reach_for_serial(serial),
+            Reach::Unsupported,
+            "serial {serial:?} names no CPID and must not be classified as reachable"
+        );
+    }
+}
+
+#[test]
+fn the_two_reach_arms_are_disjoint() {
+    let mut seen: Vec<u32> = crate::profile::CHECKM8_CPIDS
+        .iter()
+        .chain(crate::profile::USBLITER8_CPIDS.iter())
+        .copied()
+        .collect();
+    seen.sort_unstable();
+    let before = seen.len();
+    seen.dedup();
+    assert_eq!(
+        before,
+        seen.len(),
+        "a CPID in both lists would classify by list order rather than reachability"
+    );
+}
+
+/// The CPIDs `run_usb_exploit` in `main.rs` routes to a checkm8-family exploit,
+/// transcribed as data so this direction can be asserted.
+///
+/// This exists because the SoC registry does not describe every routed part:
+/// `include/soc/` has no header for 0x8720 (iPod Touch 2G), 0x8920/0x8922
+/// (A5) or 0x8930 (A6), so the registry-driven test above cannot see a CPID
+/// dropped from `CHECKM8_CPIDS` if it is one of those four. Driving from this
+/// list instead closes that direction -- an earlier version of this test
+/// iterated `CHECKM8_CPIDS` itself, which made it blind to exactly the
+/// deletion it was meant to catch.
+const DISPATCH_ROUTED_CPIDS: &[(u32, &str)] = &[
+    (0x8010, "cm8"),
+    (0x8015, "cm8"),
+    (0x8720, "steaks4uce"),
+    (0x8920, "limera1n"),
+    (0x8922, "limera1n"),
+    (0x8930, "shatter"),
+    (0x8947, "checkm8"),
+    (0x8950, "checkm8"),
+    (0x8955, "checkm8"),
+    (0x8960, "checkm8"),
+    (0x8002, "checkm8"),
+    (0x8004, "checkm8"),
+    (0x8011, "checkm8"),
+];
+
+#[test]
+fn every_cp_id_the_dispatcher_routes_is_in_the_checkm8_list() {
+    use crate::profile::{reach_for_cpid, Reach, CHECKM8_CPIDS};
+
+    for (cpid, exploit) in DISPATCH_ROUTED_CPIDS {
+        assert!(
+            CHECKM8_CPIDS.contains(cpid),
+            "main.rs routes CPID 0x{cpid:04x} to {exploit}, but CHECKM8_CPIDS omits it"
+        );
+        assert_eq!(
+            reach_for_cpid(*cpid),
+            Reach::Checkm8,
+            "CPID 0x{cpid:04x} is routed to {exploit} and must classify as checkm8"
+        );
+    }
+}
+
+#[test]
+fn the_checkm8_list_adds_nothing_the_dispatcher_does_not_route() {
+    // The other direction: a CPID the classifier claims but `run_usb_exploit`
+    // would fall through to "This device is not supported" is a claim with no
+    // code behind it.
+    for &cpid in crate::profile::CHECKM8_CPIDS {
+        assert!(
+            DISPATCH_ROUTED_CPIDS.iter().any(|(c, _)| *c == cpid),
+            "CHECKM8_CPIDS claims CPID 0x{cpid:04x} but run_usb_exploit routes no exploit to it"
+        );
+    }
+}

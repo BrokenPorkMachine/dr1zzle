@@ -31,6 +31,8 @@ const LONG_OPTS: &[(&str, bool)] = &[
     ("encrypt-uid", true),
     ("goat-run", true),
     ("goat-write", true),
+    ("detect", false),
+    ("reach", false),
 ];
 
 /// The `shortopts` string `getopt` was called with is `'pxf:'`.

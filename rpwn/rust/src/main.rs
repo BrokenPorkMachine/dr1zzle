@@ -43,6 +43,8 @@ fn print_help() {
     println!("  -p\t\t\t\tUSB exploit for pwned DFU Mode");
     println!("  -x\t\t\t\tinstall alloc8 exploit to NOR");
     println!("  -f file\t\t\tsend file to device in DFU Mode");
+    println!("  --detect\t\tprint the attached device's DFU serial");
+    println!("  --reach\t\tprint cpid= and reach= for the attached device");
     println!("Advanced options:");
     println!("  --demote\t\t\tdemote device to enable JTAG");
     println!("  --boot\t\t\tboot device");
@@ -102,6 +104,30 @@ fn main() {
             "--boot" => verbose_boot(),
             "--goat-run" => goat_run(&arg),
             "--goat-write" => goat_write(&arg),
+            "--detect" => {
+                let serial = PwnedDFUDevice::identifier();
+                println!("{serial}");
+            }
+            "--reach" => {
+                // The machine-readable half of --detect: a host tool that has
+                // to route on reachability reads this rather than keeping its
+                // own CPID lists, which is how `goat` came to disagree with the
+                // dispatcher it calls.
+                let serial = PwnedDFUDevice::identifier();
+                let cpid = profile::parse_serial(&serial).cpid;
+                let reach = profile::reach_for_serial(&serial);
+                let token = match reach {
+                    profile::Reach::Checkm8 => "checkm8",
+                    profile::Reach::Usbliter8 => "usbliter8",
+                    profile::Reach::Unsupported => "unsupported",
+                };
+                // key=value so a caller cannot mis-parse a bare token, and the
+                // human line goes to stderr so stdout stays parseable even if
+                // a future part has no CPID.
+                eprintln!("{serial}");
+                println!("cpid={}", cpid.map(|c| format!("0x{c:04x}")).unwrap_or_default());
+                println!("reach={token}");
+            }
             _ => unreachable!("unhandled option {}", opt),
         }
     }
